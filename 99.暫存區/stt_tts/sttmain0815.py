@@ -1,4 +1,4 @@
-from stt0815_gpt import load_whisper_model, transcribe_audio
+from sttdef0815_gpt import load_whisper_model, transcribe_audio
 
 model = load_whisper_model("medium") #有比base準確
 
