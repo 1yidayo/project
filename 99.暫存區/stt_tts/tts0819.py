@@ -27,6 +27,10 @@
 
 # print("語音已儲存到", output_path)
 
+"""
+1-28是之前的程式碼
+31-48行是範例程式碼 還沒細看 或許能解決之前的報錯
+"""
 
 import torch
 from TTS.api import TTS
@@ -47,6 +51,24 @@ wav = tts.tts(text="Hello world!", speaker_wav="my/cloning/audio.wav", language=
 # Text to speech to a file
 tts.tts_to_file(text="Hello world!", speaker_wav="my/cloning/audio.wav", language="en", file_path="output.wav")
 
+    #我們可能可以用的TTS模組 
 34: tts_models/zh-CN/baker/tacotron2-DDC-GST
 50: tts_models/tw_akuapem/openbible/vits
 51: tts_models/tw_asante/openbible/vits
+
+    #還沒看API
+https://developer.yating.tw/zh-TW/doc/introduction-%E7%94%A2%E5%93%81%E8%88%87%E4%BD%BF%E7%94%A8%E4%BB%8B%E7%B4%B9
+https://studio.yating.tw/intro/zh-TW
+
+    #想試試的模組
+https://www.youtube.com/watch?v=0PuslZHJQes
+https://pyttsx3.readthedocs.io/en/latest/engine.html
+
+
+https://medium.com/@zzxiang/text-to-speech-in-6-lines-of-python-code-free-no-online-api-a428a163decd
+# from espnet2.bin.tts_inference import Text2Speech
+# import soundfile
+# text2speech = Text2Speech.from_pretrained("kan-bayashi/ljspeech_vits")
+# text = "Hello, this is a text-to-speech test. Does my speech sound good?"
+# speech = text2speech(text)["wav"]
+# soundfile.write("output.wav", speech.numpy(), text2speech.fs, "PCM_16")
