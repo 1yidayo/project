@@ -15,7 +15,7 @@ language = "en"         # 報錯無中文
 text = "Hello, i' m AI voice robot. Nice to meet you."
 
 # 輸出音檔路徑
-output_path = r"D:\Desktop\\-\\testtttt\\tts_stt\\output.wav"
+output_path = r"D:\Desktop\\-\\testtttt\\stt_tts\\output.wav"
 
 # 執行 TTS 並輸出檔案
 tts.tts_to_file(text=text, speaker=tts.speakers[0], language=language, file_path=output_path)
