@@ -1,4 +1,4 @@
-from stt0819_def import load_whisper_model, transcribe_audio, opencc_model, jieba_model
+from stt_def import load_whisper_model, transcribe_audio, opencc_model, jieba_model
 
 text = transcribe_audio(load_whisper_model("medium"))
 
