@@ -4,7 +4,7 @@ from TTS.utils import radam
 from TTS.utils.manage import ModelManager
 from TTS.api import TTS
 
-def tts_zhmodel():
+def tts_zhmodel():   # 目前我試出來的方法就是加明確標點 逗號不加斷句會很奇怪 句號不加會拖長音
      model_name = "tts_models/zh-CN/baker/tacotron2-DDC-GST"
      
      # 下載模型或找到本地路徑
@@ -32,43 +32,6 @@ def tts_zhmodel():
      tts = TTS(model_name)  # TTS 內部會自動使用 safe globals
      tts.tts_to_file(text=text, file_path=output_path)
      return print(f"> 語音已儲存到：{output_path}")
-
-     """
-     | > sample_rate:22050
-     | > resample:False
-     | > num_mels:80
-     | > log_func:np.log10
-     | > min_level_db:-100
-     | > frame_shift_ms:None
-     | > frame_length_ms:None
-     | > ref_level_db:0
-     | > fft_size:1024
-     | > power:1.5
-     | > preemphasis:0.0
-     | > griffin_lim_iters:60
-     | > signal_norm:True
-     | > symmetric_norm:True
-     | > mel_fmin:50.0
-     | > mel_fmax:7600.0
-     | > pitch_fmin:0.0
-     | > pitch_fmax:640.0
-     | > spec_gain:1.0
-     | > stft_pad_mode:reflect
-     | > max_norm:4.0
-     | > clip_norm:True
-     | > do_trim_silence:True
-     | > trim_db:60
-     | > do_sound_norm:False
-     | > do_amp_to_db_linear:True
-     | > do_amp_to_db_mel:True
-     | > do_rms_norm:False
-     | > db_level:None
-     | > stats_path:C:\Users\Yi\AppData\Local\tts\tts_models--zh-CN--baker--tacotron2-DDC-GST\scale_stats.npy
-     | > base:10
-     | > hop_length:256
-     | > win_length:1024
-     > Model's reduction rate `r` is set to: 2
-     > Text splitted to sentences."""
 
 def tts_enmodel():
      model_name = "tts_models/multilingual/multi-dataset/your_tts"
@@ -99,56 +62,26 @@ def tts_enmodel():
      tts.tts_to_file(text=text, speaker=tts.speakers[0], language="en", file_path=output_path)
      return print(f"> 語音已儲存到：{output_path}")
 
-     """
-     | > sample_rate:16000
-     | > resample:False
-     | > num_mels:80
-     | > log_func:np.log10
-     | > min_level_db:0
-     | > frame_shift_ms:None
-     | > frame_length_ms:None
-     | > ref_level_db:None
-     | > fft_size:1024
-     | > power:None
-     | > preemphasis:0.0
-     | > griffin_lim_iters:None
-     | > signal_norm:None
-     | > symmetric_norm:None
-     | > mel_fmin:0
-     | > mel_fmax:None
-     | > pitch_fmin:None
-     | > pitch_fmax:None
-     | > spec_gain:20.0
-     | > stft_pad_mode:reflect
-     | > max_norm:1.0
-     | > clip_norm:True
-     | > do_trim_silence:False
-     | > trim_db:60
-     | > do_sound_norm:False
-     | > do_amp_to_db_linear:True
-     | > do_amp_to_db_mel:True
-     | > do_rms_norm:False
-     | > db_level:None
-     | > stats_path:None
-     | > base:10
-     | > hop_length:256
-     | > win_length:1024
-     > Model fully restored. 
-     > Setting up Audio Processor...
-     
-     """
-
-
-
-#還沒看API 有stt也有tts
+# 還沒看API 有stt也有tts
 # https://developer.yating.tw/zh-TW/doc/introduction-%E7%94%A2%E5%93%81%E8%88%87%E4%BD%BF%E7%94%A8%E4%BB%8B%E7%B4%B9
 # https://studio.yating.tw/intro/zh-TW
 
-#想試試的模組
+#  想試試的模組 STT
+#https://github.com/Uberi/speech_recognition#readme
+
+# O) 想試試的模組-中英皆可用 會直接播放 應該可做語音包
 # https://www.youtube.com/watch?v=0PuslZHJQes
 # https://pyttsx3.readthedocs.io/en/latest/engine.html
+# https://github.com/Code-Gym/pyttsx3-voices-list/tree/main
+import pyttsx3 
+txt = "Hello, Ryan."
+engine = pyttsx3.init()
+engine.setProperty('voice', 'com.apple.speech.sythesis.voice.samantha')
+engine.setProperty('rate', 50)
+engine.say(txt)
+engine.runAndWait()
 
-#想試試的模組
+# X) 想試試的模組-相容性無解
 # https://medium.com/@zzxiang/text-to-speech-in-6-lines-of-python-code-free-no-online-api-a428a163decd
 # from espnet2.bin.tts_inference import Text2Speech
 # import soundfile
@@ -156,3 +89,7 @@ def tts_enmodel():
 # text = "Hello, this is a text-to-speech test. Does my speech sound good?"
 # speech = text2speech(text)["wav"]
 # soundfile.write("output.wav", speech.numpy(), text2speech.fs, "PCM_16")
+
+# X) 不知道為什麼裝不了的模組
+# tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC", progress_bar=True)
+# tts.tts_to_file(text="你好，我是測試語音。", file_path=r"D:\Desktop\\-\\testtttt\stt_tts\\zh_output.wav")
