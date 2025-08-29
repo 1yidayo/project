@@ -66,20 +66,20 @@ def tts_enmodel():
 # https://developer.yating.tw/zh-TW/doc/introduction-%E7%94%A2%E5%93%81%E8%88%87%E4%BD%BF%E7%94%A8%E4%BB%8B%E7%B4%B9
 # https://studio.yating.tw/intro/zh-TW
 
-#  想試試的模組 STT
-#https://github.com/Uberi/speech_recognition#readme
+# 想試試的模組 STT-whisper更適合我們使用
+# https://github.com/Uberi/speech_recognition#readme
 
-# O) 想試試的模組-中英皆可用 會直接播放 應該可做語音包
+# O) 想試試的模組-中英皆可用 會直接播放 應該可做語音包【Coqui TTS更適合我們】
 # https://www.youtube.com/watch?v=0PuslZHJQes
 # https://pyttsx3.readthedocs.io/en/latest/engine.html
 # https://github.com/Code-Gym/pyttsx3-voices-list/tree/main
-import pyttsx3 
-txt = "Hello, Ryan."
-engine = pyttsx3.init()
-engine.setProperty('voice', 'com.apple.speech.sythesis.voice.samantha')
-engine.setProperty('rate', 50)
-engine.say(txt)
-engine.runAndWait()
+# import pyttsx3 
+# txt = "Hello, Ryan."
+# engine = pyttsx3.init()
+# engine.setProperty('voice', 'com.apple.speech.sythesis.voice.samantha')
+# engine.setProperty('rate', 50)
+# engine.say(txt)
+# engine.runAndWait()
 
 # X) 想試試的模組-相容性無解
 # https://medium.com/@zzxiang/text-to-speech-in-6-lines-of-python-code-free-no-online-api-a428a163decd
