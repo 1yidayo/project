@@ -68,7 +68,7 @@ def tts_enmodel():
      # print(color("Checkpoint 成功載入！"))
 
      text = input(color("plz input text:"))
-     output_path = input(color("plz input the output path, press 'd' if u want to use the default path:").strip('"'))
+     output_path = input(color("plz input the output path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
      if output_path.lower() == "d":
           output_path = r"D:\Desktop\\-\\testtttt\stt_tts\\en_output.wav"
      
@@ -105,26 +105,26 @@ def tts():
 
      text = input(color("plz input text:"))
 
-     language = input(color("which language do you want to use, [zh-cn] or  [en]?").strip('"'))
+     language = input(color("which language do you want to use, [zh-cn] or  [en]?")).strip().strip('"').strip("'")
      if language.lower() == "zh-cn":
           language = "zh-cn"
-          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:").strip('"'))
+          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
           if output_path.lower() == "d":
                output_path = r"D:\Desktop\\-\\testtttt\stt_tts\\zh_output.wav"
 
      elif language.lower() == "en":
           language = "en"
-          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:").strip('"'))
+          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
           if output_path.lower() == "d":
                output_path = r"D:\Desktop\\-\\testtttt\stt_tts\\en_output.wav"
 
      else:
           language = "ja"
-          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:").strip('"'))
+          output_path = input(color("plz input the output path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
           if output_path.lower() == "d":
                output_path = r"D:\Desktop\\-\\testtttt\stt_tts\\test_output.wav"
 
-     speaker_wav = input(color("plz input the speaker_wav path, press 'd' if u want to use the default path:").strip('"'))
+     speaker_wav = input(color("plz input the speaker_wav path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
      if speaker_wav.lower() == "d":
           speaker_wav = r"D:\Desktop\\-\\testtttt\stt_tts\\0805.m4a"
 

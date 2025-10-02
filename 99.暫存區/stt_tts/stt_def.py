@@ -14,10 +14,10 @@ def convert_to_wav():
 def load_whisper_model(model_size="medium"):
     model = whisper.load_model(model_size)
     return model
-def transcribe_audio(model, file_path):
-    # file_path = input(color("plz input stt file path, press 'd' if u want to use the default path:").strip().strip('"').strip("'"))
-    # if file_path.lower() == "d":
-    #       file_path = r"D:\Desktop\\-\\testtttt\\stt_tts\\0815.mp3"
+def transcribe_audio(model):
+    file_path = input(color("plz input stt file path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
+    if file_path.lower() == "d":
+          file_path = r"D:\Desktop\\-\\testtttt\\stt_tts\\0815.mp3"
     result = model.transcribe(file_path)
     print(color("> stt辨識結果：" + result["text"]))
     return result["text"]
