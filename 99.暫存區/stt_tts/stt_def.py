@@ -1,28 +1,39 @@
 import whisper #stt
 from printcolor import color
+import subprocess, os
+
+def convert_to_wav():
+    input_file = input(color("plz input stt file path, press 'd' if u want to use the default path:")).strip().strip('"').strip("'")
+    if input_file.lower() == "d":
+          input_file = r"D:\Desktop\\-\\testtttt\\stt_tts\\0815.mp3"
+    output_file = os.path.splitext(input_file)[0] + "_conv.wav"
+    cmd = ["ffmpeg", "-y", "-i", input_file, "-ar", "16000", "-ac", "1", output_file]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return output_file
+
 def load_whisper_model(model_size="medium"):
     model = whisper.load_model(model_size)
     return model
-def transcribe_audio(model):
-    file_path = input(color("plz input stt file path, press 'd' if u want to use the default path:").strip('"'))
-    if file_path.lower() == "d":
-          file_path = r"D:\Desktop\\-\\testtttt\\stt_tts\\0815.mp3"
+def transcribe_audio(model, file_path):
+    # file_path = input(color("plz input stt file path, press 'd' if u want to use the default path:").strip().strip('"').strip("'"))
+    # if file_path.lower() == "d":
+    #       file_path = r"D:\Desktop\\-\\testtttt\\stt_tts\\0815.mp3"
     result = model.transcribe(file_path)
-    print(color("> stt辨識結果：", result["text"]))
+    print(color("> stt辨識結果：" + result["text"]))
     return result["text"]
 
 from opencc import OpenCC #簡轉繁
 def opencc_model(text):
     cc = OpenCC('s2twp') 
     cc_output = cc.convert(text)
-    print(color("> 簡轉繁結果：", cc_output))
+    print(color("> 簡轉繁結果：" + cc_output))
     return cc_output
 
 import jieba #jieba斷句
 def jieba_model(text):
     jieba.set_dictionary("D:\Desktop\-\\testtttt\stt_tts\dict.txt.big") #繁體詞庫
     jieba_output = '，'.join(jieba.cut(text, cut_all=False, HMM=True))
-    print(color("> jieba中文斷句結果：", jieba_output))
+    print(color("> jieba中文斷句結果：" + jieba_output))
     return jieba_output
 
 """
