@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 
 // 假設 firebase_options.dart 存在於 lib/ 中
+import 'package:luminew_application_1/firebase_options.dart';
 
 // --- 0. 資料模型 (Models) ---
 
@@ -649,6 +652,7 @@ class _RoleOption extends StatelessWidget {
   final VoidCallback onTap;
 
   const _RoleOption({
+    super.key,
     required this.title,
     required this.icon,
     required this.isSelected,
@@ -1407,7 +1411,7 @@ class _DataEntryScreenState extends State<DataEntryScreen>
         allowedExtensions: ['pdf', 'doc', 'docx'],
       );
 
-      if (result != null) {
+      if (result != null && result.files.single != null) {
         final file = result.files.single;
 
         await firebaseService.addPortfolio(file, widget.userId);
@@ -1740,7 +1744,7 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
         child: Column(
           children: [
             DropdownButtonFormField<String>(
-              initialValue: _selectedType,
+              value: _selectedType,
               decoration: const InputDecoration(labelText: '問題類型'),
               items: ['通用型', '科系專業', '學經歷']
                   .map(
@@ -1754,7 +1758,7 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _selectedLanguage,
+              value: _selectedLanguage,
               decoration: const InputDecoration(labelText: '面試語言'),
               items: ['中文', '英文']
                   .map(
@@ -1989,7 +1993,7 @@ class InterviewResultScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
+                  boxshadow: [
                     BoxShadow(
                       color: Colors.grey.shade200,
                       blurRadius: 5,
