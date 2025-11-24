@@ -8,6 +8,8 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(title: "SQL Server 測試", home: TestPage());
@@ -15,7 +17,7 @@ class MyApp extends StatelessWidget {
 }
 
 class TestPage extends StatefulWidget {
-  const TestPage({Key? key}) : super(key: key);
+  const TestPage({super.key});
 
   @override
   _TestPageState createState() => _TestPageState();

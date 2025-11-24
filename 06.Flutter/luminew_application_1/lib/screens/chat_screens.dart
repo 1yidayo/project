@@ -27,8 +27,9 @@ class _ClassChatRoomState extends State<ClassChatRoom> {
     mockService.sendMessage(_ctrl.text, widget.userEmail, widget.chatKey);
     _ctrl.clear();
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollCtrl.hasClients)
+      if (_scrollCtrl.hasClients) {
         _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
+      }
     });
   }
 
@@ -43,13 +44,15 @@ class _ClassChatRoomState extends State<ClassChatRoom> {
             child: StreamBuilder<List<String>>(
               stream: mockService.getChatStream(widget.chatKey),
               builder: (ctx, snap) {
-                if (!snap.hasData)
+                if (!snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
+                }
                 final msgs = snap.data!;
-                if (msgs.isEmpty)
+                if (msgs.isEmpty) {
                   return const Center(
                     child: Text("尚無訊息", style: TextStyle(color: Colors.grey)),
                   );
+                }
 
                 return ListView.builder(
                   controller: _scrollCtrl,

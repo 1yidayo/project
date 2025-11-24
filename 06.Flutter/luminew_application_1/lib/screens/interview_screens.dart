@@ -124,6 +124,7 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
 
   void _end() {
     _timer.cancel();
+    // ✅ 修正點：補上缺少的欄位 (interviewer, language, privacy)
     final r = InterviewRecord(
       id: 'IR${DateTime.now().millisecondsSinceEpoch}',
       studentId: widget.user.email,
@@ -131,7 +132,11 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
       durationSec: _sec,
       scores: {'overall': 80 + Random().nextInt(20)},
       type: '通用型',
+      interviewer: 'AI 面試官', // 補上預設值
+      language: '中文', // 補上預設值
+      privacy: 'Private', // 補上預設值
     );
+
     mockService.addRecord(r);
     Navigator.pushReplacement(
       context,
@@ -235,6 +240,12 @@ class InterviewResultScreen extends StatelessWidget {
               title: const Text('面試類型'),
               trailing: Text(record.type),
             ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('面試官'),
+              trailing: Text(record.interviewer),
+            ), // 顯示面試官
             const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,

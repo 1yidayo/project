@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../sql_service.dart';
 import 'common_screens.dart';
-import 'interview_screens.dart';
+import 'interview_flow.dart'; // 新的面試流程
 import 'chat_screens.dart';
 
 class StudentMainScaffold extends StatefulWidget {
@@ -13,86 +13,73 @@ class StudentMainScaffold extends StatefulWidget {
     required this.onLogout,
     required this.user,
   });
-
   @override
   State<StudentMainScaffold> createState() => _StudentMainScaffoldState();
 }
 
 class _StudentMainScaffoldState extends State<StudentMainScaffold> {
-  int _index = 0;
-
+  int _idx = 0;
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      InterviewHomePage(user: widget.user),
-      ClassChatRoom(
-        chatKey: 'public',
-        userEmail: widget.user.email,
-        title: '公共交流',
-        showAppBar: false,
-      ), // ✅ 聊天室設為分頁，會有導覽列
-      InterviewRecordListScreen(user: widget.user),
+    final pages = [
+      StudentHomePage(user: widget.user),
+      InterviewRecordCenter(user: widget.user, isTeacher: false), // 整合的紀錄中心
+      DataEntryScreen(user: widget.user),
       StudentClassScreen(user: widget.user),
       SettingsScreen(onLogout: widget.onLogout, user: widget.user),
     ];
-
     return Scaffold(
-      appBar: _index == 1 ? AppBar(title: const Text('公共交流區')) : null,
-      body: screens[_index],
+      body: pages[_idx],
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
+        currentIndex: _idx,
+        onTap: (i) => setState(() => _idx = i),
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).primaryColor,
-        backgroundColor: Colors.white,
+        selectedItemColor: Colors.indigo,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: '主頁'),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: '主頁'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.forum_outlined),
-            label: '交流',
+            icon: Icon(Icons.history_edu),
+            label: '評語/紀錄',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.video_library_outlined),
-            label: '紀錄',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.school_outlined),
-            label: '班級',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            label: '設定',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.edit_document), label: '資料'),
+          BottomNavigationBarItem(icon: Icon(Icons.school), label: '班級'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: '設定'),
         ],
       ),
     );
   }
 }
 
-// ✅ 漂亮的卡片式主頁
-class InterviewHomePage extends StatelessWidget {
+class StudentHomePage extends StatelessWidget {
   final AppUser user;
-  const InterviewHomePage({super.key, required this.user});
-
+  const StudentHomePage({super.key, required this.user});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('主頁'),
+        title: const Text('Luminew 主頁'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
+            icon: const Icon(Icons.notifications),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      NotificationCenter(user: user, isTeacher: false),
+                ),
+              );
+            },
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
+          children: [
             Text(
-              '歡迎回來, ${user.name}！',
+              'Hi, ${user.name}',
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -100,45 +87,43 @@ class InterviewHomePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            _buildCard(
-              context,
+            _ActionCard(
               title: '開始模擬面試',
-              icon: Icons.mic_external_on_outlined,
-              subtitle: '設定場景，即時獲得 AI 分析回饋',
-              color: Colors.red.shade600,
+              icon: Icons.mic,
+              color: Colors.redAccent,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => MockInterviewSetupScreen(user: user),
+                  builder: (_) => InterviewSetupScreen(user: user),
+                ),
+              ),
+            ),
+            _ActionCard(
+              title: '公共交流區',
+              icon: Icons.forum,
+              color: Colors.blueAccent,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ClassChatRoom(chatKey: 'public', userEmail: user.email),
                 ),
               ),
             ),
             const SizedBox(height: 20),
             const Text(
-              '常用功能入口',
+              '快捷功能',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
-            _buildCard(
-              context,
-              title: '查看面試紀錄',
-              icon: Icons.video_library_outlined,
-              subtitle: '回放、查看過往練習與評分詳情',
+            ListTile(
+              leading: const Icon(Icons.video_library),
+              title: const Text('我的面試回放'),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => InterviewRecordListScreen(user: user),
+                  builder: (_) =>
+                      InterviewRecordCenter(user: user, isTeacher: false),
                 ),
-              ),
-            ),
-            _buildCard(
-              context,
-              title: '更新學習歷程',
-              icon: Icons.description_outlined,
-              subtitle: '上傳資料，優化 AI 提問',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => DataEntryScreen(user: user)),
               ),
             ),
           ],
@@ -146,56 +131,95 @@ class InterviewHomePage extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildCard(
-    BuildContext context, {
-    required String title,
-    required IconData icon,
-    required String subtitle,
-    Color? color,
-    required VoidCallback onTap,
-  }) {
+class _ActionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionCard({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 16.0),
-      elevation: 3,
-      color: color ?? Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          vertical: 8.0,
-          horizontal: 16.0,
-        ),
-        leading: Icon(
-          icon,
-          color: color != null ? Colors.white : Theme.of(context).primaryColor,
-          size: 30,
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: color != null ? Colors.white : Colors.black87,
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: color != null ? Colors.white70 : Colors.grey[600],
-          ),
-        ),
-        trailing: Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
-          color: color != null ? Colors.white70 : Colors.grey[600],
-        ),
+      elevation: 4,
+      color: color,
+      margin: const EdgeInsets.only(bottom: 16),
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 40),
+              const SizedBox(width: 20),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-// 學生班級管理
+class DataEntryScreen extends StatelessWidget {
+  final AppUser user;
+  const DataEntryScreen({super.key, required this.user});
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('資料填寫'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: '基本資料'),
+              Tab(text: '學習經歷'),
+              Tab(text: '備審資料'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _SimpleForm(user: user, cat: '基本資料'),
+            _SimpleForm(user: user, cat: '學習經歷'),
+            _SimpleForm(user: user, cat: '備審資料'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SimpleForm extends StatelessWidget {
+  final AppUser user;
+  final String cat;
+  const _SimpleForm({required this.user, required this.cat});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        "$cat 填寫功能開發中\n(可連接 SQL LearningPortfolios 表)",
+        style: const TextStyle(color: Colors.grey),
+      ),
+    );
+  }
+}
+
+// StudentClassScreen 保持與之前相同，或貼上即可
 class StudentClassScreen extends StatefulWidget {
   final AppUser user;
   const StudentClassScreen({super.key, required this.user});
@@ -205,46 +229,29 @@ class StudentClassScreen extends StatefulWidget {
 
 class _StudentClassScreenState extends State<StudentClassScreen> {
   final _codeCtrl = TextEditingController();
-  List<Class> _classes = [];
-  bool _isLoading = false;
-
+  List<Class> _list = [];
   @override
   void initState() {
     super.initState();
-    _loadClasses();
+    _load();
   }
 
-  Future<void> _loadClasses() async {
-    setState(() => _isLoading = true);
-    try {
-      _classes = await SqlService.getStudentClasses(widget.user.email);
-    } catch (e) {
-      print(e);
-    }
-    if (mounted) setState(() => _isLoading = false);
+  void _load() async {
+    var d = await SqlService.getStudentClasses(widget.user.email);
+    if (mounted) setState(() => _list = d);
   }
 
-  Future<void> _join() async {
+  void _join() async {
     if (_codeCtrl.text.isEmpty) return;
-    FocusScope.of(context).unfocus();
-    setState(() => _isLoading = true);
     try {
-      Class? cls = await SqlService.joinClass(
-        _codeCtrl.text,
-        widget.user.email,
-      );
+      await SqlService.joinClass(_codeCtrl.text, widget.user.email);
       _codeCtrl.clear();
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('加入成功：${cls?.name}')));
-      await _loadClasses();
+      _load();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('成功加入')));
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$e')));
-      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -254,160 +261,44 @@ class _StudentClassScreenState extends State<StudentClassScreen> {
       appBar: AppBar(title: const Text('我的班級')),
       body: Column(
         children: [
-          Card(
-            margin: const EdgeInsets.all(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '加入新班級',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _codeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '邀請碼',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _codeCtrl,
-                          decoration: const InputDecoration(
-                            labelText: '輸入邀請碼',
-                            border: OutlineInputBorder(),
-                            hintText: "例如: C123456",
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: _join,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.indigo,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('加入'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+                ElevatedButton(onPressed: _join, child: const Text('加入')),
+              ],
             ),
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _classes.isEmpty
-                ? const Center(child: Text("尚未加入任何班級"))
-                : ListView.builder(
-                    itemCount: _classes.length,
-                    itemBuilder: (ctx, i) => Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: ListTile(
-                        leading: const Icon(Icons.school, color: Colors.green),
-                        title: Text(_classes[i].name),
-                        subtitle: Text('代碼: ${_classes[i].invitationCode}'),
-                        trailing: const Icon(Icons.arrow_forward_ios),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ClassChatRoom(
-                              chatKey: _classes[i].id,
-                              userEmail: widget.user.email,
-                              title: _classes[i].name,
-                            ),
-                          ),
-                        ),
+            child: ListView.builder(
+              itemCount: _list.length,
+              itemBuilder: (ctx, i) => Card(
+                child: ListTile(
+                  title: Text(_list[i].name),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ClassChatRoom(
+                        chatKey: _list[i].id,
+                        userEmail: widget.user.email,
+                        title: _list[i].name,
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// 資料填寫
-class DataEntryScreen extends StatefulWidget {
-  final AppUser user;
-  const DataEntryScreen({super.key, required this.user});
-  @override
-  State<DataEntryScreen> createState() => _DataEntryScreenState();
-}
-
-class _DataEntryScreenState extends State<DataEntryScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('資料填寫')),
-      body: FutureBuilder<List<LearningPortfolio>>(
-        future: SqlService.getPortfolios(widget.user.email),
-        builder: (ctx, snapshot) {
-          if (!snapshot.hasData)
-            return const Center(child: CircularProgressIndicator());
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              const Text(
-                '學習歷程檔案',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.upload_file),
-                label: const Text('上傳新檔案'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  final c = TextEditingController();
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('上傳檔案'),
-                      content: TextField(
-                        controller: c,
-                        decoration: const InputDecoration(labelText: '檔案標題'),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () async {
-                            if (c.text.isNotEmpty) {
-                              await SqlService.addPortfolio(
-                                widget.user.email,
-                                c.text,
-                              );
-                              Navigator.pop(ctx);
-                              setState(() {});
-                            }
-                          },
-                          child: const Text('上傳'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const Divider(height: 30),
-              ...snapshot.data!.map(
-                (p) => Card(
-                  child: ListTile(
-                    leading: const Icon(
-                      Icons.file_present,
-                      color: Colors.orange,
-                    ),
-                    title: Text(p.title),
-                    subtitle: Text(p.uploadDate),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
       ),
     );
   }

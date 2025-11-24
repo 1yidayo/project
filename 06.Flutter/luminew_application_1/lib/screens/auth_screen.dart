@@ -13,16 +13,22 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
+  // 文字控制器
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
 
+  // 狀態變數
   UserRole _selectedRole = UserRole.student;
-  bool _isLoggingIn = true;
+  bool _isLoggingIn = true; // true=登入模式, false=註冊模式
   bool _isLoading = false;
   String? _errorMessage;
 
+  // 處理登入/註冊邏輯
   Future<void> _handleAuth() async {
+    // 收起鍵盤
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -33,10 +39,12 @@ class _AuthScreenState extends State<AuthScreen> {
     final name = _nameController.text.trim();
 
     try {
-      if (email.isEmpty || password.isEmpty) throw Exception("帳號密碼不能為空");
+      if (email.isEmpty || password.isEmpty) {
+        throw Exception("帳號與密碼不能為空");
+      }
 
       if (_isLoggingIn) {
-        // 登入
+        // 🟢 登入模式
         AppUser? user = await SqlService.login(email, password);
         if (user != null) {
           widget.onAuthSuccess(user);
@@ -44,21 +52,28 @@ class _AuthScreenState extends State<AuthScreen> {
           throw Exception("帳號或密碼錯誤");
         }
       } else {
-        // 註冊
+        // 🔵 註冊模式
         if (name.isEmpty) throw Exception("請輸入姓名");
+
+        // 將 Enum 轉成資料庫儲存的字串 ('Student' 或 'Teacher')
         String roleStr = _selectedRole == UserRole.student
             ? 'Student'
             : 'Teacher';
+
+        // 1. 寫入資料庫
         await SqlService.registerUser(email, password, name, roleStr);
 
-        // 註冊後自動登入
+        // 2. 註冊成功後，自動執行登入
         AppUser? user = await SqlService.login(email, password);
-        if (user != null) widget.onAuthSuccess(user);
+        if (user != null) {
+          widget.onAuthSuccess(user);
+        }
       }
     } catch (e) {
-      setState(
-        () => _errorMessage = e.toString().replaceAll("Exception: ", ""),
-      );
+      setState(() {
+        // 去掉 "Exception: " 字樣，讓錯誤訊息比較好看
+        _errorMessage = e.toString().replaceAll("Exception: ", "");
+      });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -67,7 +82,10 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isLoggingIn ? '登入系統' : '註冊帳號')),
+      appBar: AppBar(
+        title: Text(_isLoggingIn ? '登入系統' : '註冊帳號'),
+        centerTitle: true,
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32.0),
@@ -75,6 +93,7 @@ class _AuthScreenState extends State<AuthScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              // --- 只有「註冊」時才顯示：角色選擇 & 姓名 ---
               if (!_isLoggingIn) ...[
                 _buildRoleSelector(),
                 const SizedBox(height: 20),
@@ -91,6 +110,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 15),
               ],
 
+              // --- Email 輸入框 ---
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -102,7 +122,10 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 keyboardType: TextInputType.emailAddress,
               ),
+
               const SizedBox(height: 15),
+
+              // --- 密碼 輸入框 ---
               TextField(
                 controller: _passwordController,
                 decoration: InputDecoration(
@@ -114,11 +137,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 obscureText: true,
               ),
+
               const SizedBox(height: 30),
 
+              // --- 錯誤訊息顯示 ---
               if (_errorMessage != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: 15),
                   child: Text(
                     _errorMessage!,
                     style: TextStyle(
@@ -129,6 +154,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
 
+              // --- 登入/註冊 按鈕 ---
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : ElevatedButton(
@@ -139,22 +165,35 @@ class _AuthScreenState extends State<AuthScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
+                        elevation: 5,
                       ),
                       child: Text(
                         _isLoggingIn ? '登入' : '註冊',
                         style: const TextStyle(
                           fontSize: 18,
                           color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
+
               const SizedBox(height: 20),
+
+              // --- 切換模式按鈕 ---
               TextButton(
-                onPressed: () => setState(() {
-                  _isLoggingIn = !_isLoggingIn;
-                  _errorMessage = null;
-                }),
-                child: Text(_isLoggingIn ? '沒有帳號？點此註冊' : '已有帳號？點此登入'),
+                onPressed: () {
+                  setState(() {
+                    _isLoggingIn = !_isLoggingIn;
+                    _errorMessage = null; // 切換時清空錯誤訊息
+                  });
+                },
+                child: Text(
+                  _isLoggingIn ? '沒有帳號？點此註冊' : '已有帳號？點此登入',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
               ),
             ],
           ),
@@ -163,6 +202,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  // 角色選擇器 UI
   Widget _buildRoleSelector() {
     return Container(
       padding: const EdgeInsets.all(8),
@@ -192,6 +232,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
+// 自訂角色選擇按鈕元件
 class _RoleOption extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -233,7 +274,6 @@ class _RoleOption extends StatelessWidget {
                   : Colors.grey.shade600,
             ),
             const SizedBox(width: 8),
-            // ✅ 修正處：補上 isSelected ? 判斷式
             Text(
               title,
               style: TextStyle(
