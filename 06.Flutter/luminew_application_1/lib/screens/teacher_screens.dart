@@ -1,11 +1,16 @@
+// fileName: lib/screens/teacher_screens.dart
 import 'package:flutter/material.dart';
 import '../models.dart';
 import '../sql_service.dart';
 import 'common_screens.dart';
 import 'chat_screens.dart';
-import 'interview_flow.dart'; // 引用評語請求列表
+import 'interview_screens.dart'; // 引用修好的錄影與紀錄頁面
 
-// 1. 教師端主架構 (底部導覽列)
+// ==========================================
+// 1. 教師端主架構
+//    (底部保留：班級、交流、評語、設定)
+//    (頂部右上：鈴鐺 -> 邀請管理)
+// ==========================================
 class TeacherMainScaffold extends StatefulWidget {
   final VoidCallback onLogout;
   final AppUser user;
@@ -21,41 +26,54 @@ class TeacherMainScaffold extends StatefulWidget {
 
 class _TeacherMainScaffoldState extends State<TeacherMainScaffold> {
   int _idx = 0;
+
   @override
   Widget build(BuildContext context) {
-    // 定義五個分頁
+    // 定義主畫面的四個分頁
     final pages = [
-      TeacherClassScreen(user: widget.user), // 班級管理 (完整版)
+      TeacherClassScreen(user: widget.user), // 0. 班級管理
       ClassChatRoom(
         chatKey: 'public',
         userEmail: widget.user.email,
         title: '公共交流',
         showAppBar: false,
-      ), // 公共交流
-      _InvitationManager(user: widget.user), // 邀請管理
-      InterviewRecordCenter(
-        user: widget.user,
-        isTeacher: true,
-      ), // 評語中心 (複用 interview_flow 的元件)
-      SettingsScreen(onLogout: widget.onLogout, user: widget.user), // 設定
+      ), // 1. 公共交流
+      InterviewRecordListScreen(user: widget.user), // 2. 評語/紀錄中心 (這是您要保留的)
+      SettingsScreen(onLogout: widget.onLogout, user: widget.user), // 3. 設定
     ];
 
+    // 對應的標題
+    final titles = ['班級管理', '互動交流', '紀錄審閱', '設定'];
+
     return Scaffold(
-      // 只有特定頁面顯示 AppBar
-      appBar: (_idx == 1 || _idx == 2)
-          ? AppBar(title: Text(_idx == 1 ? '互動交流' : '面試邀請管理'))
-          : null,
+      appBar: AppBar(
+        title: Text(titles[_idx]),
+        actions: [
+          // ★ 修改：右上角鈴鐺圖示 (查看邀請狀態)
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TeacherNotificationsScreen(user: widget.user),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: pages[_idx],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _idx,
         onTap: (i) => setState(() => _idx = i),
-        type: BottomNavigationBarType.fixed, // 固定樣式，防止圖示跳動
+        type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.indigo,
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.class_), label: '班級'),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: '交流'),
-          BottomNavigationBarItem(icon: Icon(Icons.mail), label: '邀請'),
+          // ★ 這裡保留了評語頁，移除了邀請頁
           BottomNavigationBarItem(icon: Icon(Icons.rate_review), label: '評語'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: '設定'),
         ],
@@ -64,77 +82,92 @@ class _TeacherMainScaffoldState extends State<TeacherMainScaffold> {
   }
 }
 
-// ================= 新增功能 =================
-
-// 邀請管理頁
-class _InvitationManager extends StatelessWidget {
+// ==========================================
+// 2. 老師通知中心 (獨立頁面：查看邀請狀態)
+// ==========================================
+class TeacherNotificationsScreen extends StatelessWidget {
   final AppUser user;
-  const _InvitationManager({required this.user});
+  const TeacherNotificationsScreen({super.key, required this.user});
+
   @override
   Widget build(BuildContext context) {
-    // 這裡使用 Scaffold 的 body 部分，因為 AppBar 由外層提供
-    return FutureBuilder<List<Invitation>>(
-      future: SqlService.getInvitations(user.id, true), // true 代表我是老師
-      builder: (ctx, snap) {
-        if (!snap.hasData)
-          return const Center(child: CircularProgressIndicator());
-        if (snap.data!.isEmpty) {
-          return const Center(
-            child: Text(
-              "目前沒有已發送的邀請\n請至班級學生列表發送",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-          );
-        }
-        return ListView.builder(
-          itemCount: snap.data!.length,
-          itemBuilder: (ctx, i) {
-            final inv = snap.data![i];
-            Color statusColor = Colors.grey;
-            if (inv.status == 'Accepted') statusColor = Colors.green;
-            if (inv.status == 'Rejected') statusColor = Colors.red;
+    return Scaffold(
+      appBar: AppBar(title: const Text("邀請發送紀錄")),
+      body: FutureBuilder<List<Invitation>>(
+        future: SqlService.getInvitations(user.id, true), // true = 我是老師
+        builder: (ctx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snap.hasData || snap.data!.isEmpty) {
+            return const Center(
+              child: Text(
+                "目前沒有已發送的邀請\n請至班級學生列表發送",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            );
+          }
+          
+          return ListView.builder(
+            itemCount: snap.data!.length,
+            itemBuilder: (ctx, i) {
+              final inv = snap.data![i];
+              
+              // 狀態顏色與文字
+              Color statusColor = Colors.orange;
+              String statusText = "等待回覆";
+              IconData statusIcon = Icons.access_time;
 
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: ListTile(
-                leading: Icon(Icons.person_outline, color: statusColor),
-                title: Text("發送給：${inv.studentName}"),
-                subtitle: Text("狀態: ${inv.status} | 訊息: ${inv.message}"),
-                // 如果學生接受了，顯示「開始」按鈕 (功能待實作，先跳轉到設定頁示意)
-                trailing: inv.status == 'Accepted'
-                    ? ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("準備開始面試 (功能開發中)")),
-                          );
-                          // 未來這裡可以跳轉到視訊通話頁面
-                        },
-                        child: const Text("開始面試"),
-                      )
-                    : Text(
-                        inv.status,
+              if (inv.status == 'Accepted') {
+                statusColor = Colors.green;
+                statusText = "學生已接受";
+                statusIcon = Icons.check_circle;
+              } else if (inv.status == 'Rejected') {
+                statusColor = Colors.red;
+                statusText = "學生已拒絕";
+                statusIcon = Icons.cancel;
+              }
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: statusColor.withOpacity(0.1),
+                    child: Icon(statusIcon, color: statusColor),
+                  ),
+                  title: Text("發送給：${inv.studentName}"),
+                  subtitle: Text("訊息: ${inv.message}"),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        statusText,
                         style: TextStyle(
                           color: statusColor,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-              ),
-            );
-          },
-        );
-      },
+                      Text(
+                        inv.date.split(' ')[0], // 顯示日期
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
 
-// ================= 原有功能的完整版 =================
-
-// 班級管理頁 (列表 + 創建) - 完整實作
+// ==========================================
+// 3. 班級管理頁 (列表 + 創建)
+// ==========================================
 class TeacherClassScreen extends StatefulWidget {
   final AppUser user;
   const TeacherClassScreen({super.key, required this.user});
@@ -183,18 +216,14 @@ class _TeacherClassScreenState extends State<TeacherClassScreen> {
     setState(() => _isLoading = true);
     try {
       await SqlService.createClass(_ctrl.text, widget.user.email);
-      await Future.delayed(const Duration(milliseconds: 500)); // 緩衝
+      await Future.delayed(const Duration(milliseconds: 500));
       _ctrl.clear();
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('建立成功！')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('建立成功！')));
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('錯誤: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('錯誤: $e')));
         setState(() => _isLoading = false);
       }
     }
@@ -203,7 +232,7 @@ class _TeacherClassScreenState extends State<TeacherClassScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('班級管理')),
+      // 這裡不用 AppBar，因為外層已經有了
       body: Column(
         children: [
           Padding(
@@ -275,7 +304,9 @@ class _TeacherClassScreenState extends State<TeacherClassScreen> {
   }
 }
 
-// 班級詳情頁 (學生列表 + 聊天室 Tab) - 完整實作
+// ==========================================
+// 4. 班級詳情頁 (學生列表 + 聊天室 + 發送邀請功能)
+// ==========================================
 class TeacherClassDetailScreen extends StatefulWidget {
   final Class cls;
   final AppUser user;
@@ -286,8 +317,7 @@ class TeacherClassDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<TeacherClassDetailScreen> createState() =>
-      _TeacherClassDetailScreenState();
+  State<TeacherClassDetailScreen> createState() => _TeacherClassDetailScreenState();
 }
 
 class _TeacherClassDetailScreenState extends State<TeacherClassDetailScreen> {
@@ -295,7 +325,7 @@ class _TeacherClassDetailScreenState extends State<TeacherClassDetailScreen> {
 
   // 顯示發送邀請的對話框
   void _showInviteDialog(Student student) {
-    _inviteMsgCtrl.text = "同學你好，我想邀請你進行一次模擬面試。"; // 預設訊息
+    _inviteMsgCtrl.text = "同學你好，邀請你進行一次模擬面試。"; // 預設訊息
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -361,7 +391,7 @@ class _TeacherClassDetailScreenState extends State<TeacherClassDetailScreen> {
         ),
         body: TabBarView(
           children: [
-            // Tab 1: 學生列表
+            // Tab 1: 學生列表 (含發送邀請按鈕)
             FutureBuilder<List<Student>>(
               future: SqlService.getClassStudents(widget.cls.id),
               builder: (ctx, snap) {
