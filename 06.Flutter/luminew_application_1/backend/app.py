@@ -21,7 +21,22 @@ MODEL_PATH = os.path.join(PROJECT_DIR, "models", "test_best_.pth")
 HAAR_CASCADE_PATH = os.path.join(PROJECT_DIR, "data", "haarcascade_frontalface_default.xml")
 
 # ★★★ 您的 GOOGLE API Key ★★★
-GOOGLE_API_KEY = "AIzaSyD6795y_wZdy-3nyioKwTS5OHFj4uIvIOs"
+# 原本的 (刪掉這行)
+# GOOGLE_API_KEY = "AIzaSyD......" 
+
+# ✅ 修改後 (改成這樣)
+import os
+from dotenv import load_dotenv # 匯入讀取套件
+
+# 載入 .env 檔案
+load_dotenv()
+
+# 從環境變數讀取 Key
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# 檢查有沒有讀到 (除錯用)
+if not GOOGLE_API_KEY:
+    print("❌ 錯誤：找不到 GOOGLE_API_KEY，請檢查 .env 檔案")
 
 # 設定 Google API
 try:
