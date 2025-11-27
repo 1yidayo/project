@@ -1,27 +1,61 @@
 # yating_tts.py（把 gpt 回覆文字送給 Yating TTS，取回音檔並播放）
-import requests, io
+import requests, io, base64
 from pydub import AudioSegment
-from pydub.playback import play
+# from pydub.playback import play
+import simpleaudio as sa
 
-YATING_TTS_URL = "https://tts.api.yating.tw/v2/tts"  # 假設路徑（用文件上確切 endpoint）
-YATING_API_KEY = "你的_YATING_API_KEY"
+def play_audiosegment(audio: AudioSegment):
+    """用 simpleaudio 播放 AudioSegment，不需臨時檔"""
+    play_obj = sa.play_buffer(
+        audio.raw_data,
+        num_channels=audio.channels,
+        bytes_per_sample=audio.sample_width,
+        sample_rate=audio.frame_rate
+    )
+    play_obj.wait_done()
 
-def synthesize_and_play(text, voice="zh_tw_standard_1"):
+# 建立一個可寫暫存檔
+"""with tempfile.NamedTemporaryFile(delete=True, suffix=".wav", dir=".") as f:
+    audio.export(f.name, format="wav")
+    play(AudioSegment.from_file(f.name))"""
+
+YATING_TTS_URL = "https://tts.api.yating.tw/v2/speeches/short"
+YATING_API_KEY = "6aa8c608b8541c2886a0e0222aa57ff2090b2b8e"
+
+def synthesize_and_play(text):
     headers = {
-        "Authorization": f"Bearer {YATING_API_KEY}",
+        "key": YATING_API_KEY,  # 🔥 注意這裡是錯，我改回正確 ↓
+        # It should be:
+        # "key": YATING_API_KEY,
         "Content-Type": "application/json"
     }
+
     body = {
-        "text": text,
-        "voice": voice,
-        # 其他參數如 speed, pitch, format 等依 Yating 文件可選
+        "input": { "type": "text", "text": text },
+        "voice": {
+            "model":"zh_en_female_2",
+            "speed":0.8,
+            "pitch":1.3,
+            "energy":1.0
+        },
+        "audioConfig": {
+            "encoding": "MP3",
+            "sampleRate": "16K"
+        }
     }
-    r = requests.post(YATING_TTS_URL, json=body, headers=headers)
+
+    r = requests.post(YATING_TTS_URL, json=body, headers={
+        "key": YATING_API_KEY,
+        "Content-Type": "application/json"
+    })
     r.raise_for_status()
-    # 假設回傳是二進位 audio (wav/mp3)
-    audio_bytes = r.content
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")  # or 'wav'
-    play(audio)
+
+    resp = r.json()
+    audio_bytes = base64.b64decode(resp["audioContent"])
+    audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+    play_audiosegment(audio)
 
 if __name__ == "__main__":
     synthesize_and_play("你好，我是你的模擬教授。請問你想先練習哪個主題？")
+
+
