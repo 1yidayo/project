@@ -33,7 +33,7 @@ def synthesize_and_play(text):
     body = {
         "input": { "type": "text", "text": text },
         "voice": {
-            "model":"zh_en_female_2",
+            "model":"zh_en_male_1",
             "speed":0.8,
             "pitch":1.3,
             "energy":1.0

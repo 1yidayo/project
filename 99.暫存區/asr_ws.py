@@ -54,8 +54,8 @@ async def asr_stream_loop(on_final_text):
                 # 將 final text 傳給處理函式（例如呼叫 OpenAI）
                 threading.Thread(target=on_final_text, args=(final_text,)).start()
 
-"""if __name__ == "__main__":
+if __name__ == "__main__":
     # 範例處理函式，把文字印出（實際會呼叫 OpenAI）
     def handle_final(text):
         print("處理 ASR 結果：", text)
-    asyncio.run(asr_stream_loop(handle_final))"""
+    asyncio.run(asr_stream_loop(handle_final))
