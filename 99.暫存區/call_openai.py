@@ -1,7 +1,7 @@
 # call_openai.py（把 ASR 的文字送給 gpt-4.1-nano）
 import requests
 
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "要自己替換 不可把key推上去！！"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 def ask_gpt4_1_nano(prompt, system_instructions=None):
