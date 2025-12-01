@@ -1,21 +1,24 @@
 // fileName: lib/sql_service.dart
 import 'dart:convert';
+import 'dart:math'; // ★ 必須引入，用於生成 6 位數代碼
 import 'package:sql_conn/sql_conn.dart';
 import 'models.dart';
 
 class SqlService {
-  // ★ 請確認您的 IP (模擬器: 10.0.2.2 / 真機: 電腦IPv4)
-  static const String _ip = "10.0.2.2"; 
+  // ★ 請確認您的 IP (模擬器通常是 10.0.2.2)
+  static const String _ip = "10.0.2.2";
   static const String _port = "1433";
   static const String _dbName = "LuminewDB";
   static const String _user = "sa";
   static const String _pass = "112233";
 
-  // 1. 連線與安全讀寫機制
+  // 連線與重連機制
   static Future<void> connect({bool force = false}) async {
     try {
       if (force) {
-        try { await SqlConn.disconnect(); } catch (_) {}
+        try {
+          await SqlConn.disconnect();
+        } catch (_) {}
       }
       if (!SqlConn.isConnected || force) {
         await SqlConn.connect(
@@ -35,284 +38,329 @@ class SqlService {
 
   static Future<String> _safeRead(String sql) async {
     try {
-      await connect();
+      if (!SqlConn.isConnected) await connect();
       return await SqlConn.readData(sql);
     } catch (e) {
-      String err = e.toString().toLowerCase();
-      if (err.contains("closed") || err.contains("connection")) {
-        print("⚠️ 連線中斷，重連中...");
-        await connect(force: true);
-        return await SqlConn.readData(sql);
-      }
-      throw e;
+      print("⚠️ 讀取異常，嘗試重連: $e");
+      await connect(force: true);
+      return await SqlConn.readData(sql);
     }
   }
 
   static Future<void> _safeWrite(String sql) async {
     try {
-      await connect();
+      if (!SqlConn.isConnected) await connect();
       await SqlConn.writeData(sql);
     } catch (e) {
-      print("⚠️ 寫入中斷，重連中...");
+      print("⚠️ 寫入異常，嘗試重連: $e");
       await connect(force: true);
       await SqlConn.writeData(sql);
     }
   }
 
-  // ====================================================
-  //  使用者與驗證 (User Auth)
-  // ====================================================
-  
+  // 除錯用工具
+  static Future<String> readDataDebug(String sql) async {
+    try {
+      if (!SqlConn.isConnected) await connect();
+      return await SqlConn.readData(sql);
+    } catch (e) {
+      return "Error: $e";
+    }
+  }
+
+  // ==========================
+  // 使用者驗證
+  // ==========================
   static Future<AppUser?> login(String email, String password) async {
-    String sql = "SELECT * FROM Users WHERE Email = '$email' AND PasswordHash = '$password'";
+    String sql =
+        "SELECT * FROM Users WHERE Email = '$email' AND PasswordHash = '$password'";
     try {
       var res = await _safeRead(sql);
       if (res.isEmpty || res == "[]") return null;
       return AppUser.fromMap(jsonDecode(res)[0]);
     } catch (e) {
-      print("Login Error: $e");
       return null;
     }
   }
 
-  static Future<void> registerUser(String email, String password, String name, String role) async {
-    String check = await _safeRead("SELECT * FROM Users WHERE Email = '$email'");
-    if (check != "[]" && check.isNotEmpty) throw Exception("此 Email 已被註冊");
-
-    String sql = "INSERT INTO Users (Email, PasswordHash, Name, Role) VALUES ('$email', '$password', N'$name', '$role')";
+  static Future<void> registerUser(
+    String email,
+    String password,
+    String name,
+    String role,
+  ) async {
+    String sql =
+        "INSERT INTO Users (Email, PasswordHash, Name, Role) VALUES ('$email', '$password', N'$name', '$role')";
     await _safeWrite(sql);
   }
 
-  static Future<void> updateUserName(String email, String newName) async {
-    String sql = "UPDATE Users SET Name = N'$newName' WHERE Email = '$email'";
-    await _safeWrite(sql);
-  }
-
-  // ====================================================
-  //  面試紀錄 (AI Interview Records)
-  // ====================================================
-
-  static Future<void> saveRecord(InterviewRecord r) async {
-    String scoresJson = jsonEncode(r.scores);
-    
-    String sql = """
-      INSERT INTO InterviewRecords 
-      (StudentID, Date, DurationSeconds, Type, Interviewer, Language, OverallScore, ScoresDetail, Privacy) 
-      VALUES 
-      (
-        (SELECT UserID FROM Users WHERE Email = '${r.studentId}'), 
-        GETDATE(), 
-        ${r.durationSec}, 
-        N'${r.type}', 
-        N'${r.interviewer}', 
-        N'${r.language}', 
-        ${r.overallScore}, 
-        '$scoresJson', 
-        '${r.privacy}'
-      )
-    """;
-    await _safeWrite(sql);
-  }
-
-  static Future<List<InterviewRecord>> getRecords(String userId, String filter) async {
-    String sql;
-    if (userId.contains('@')) {
-       sql = "SELECT * FROM InterviewRecords WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$userId') ORDER BY Date DESC";
-    } else {
-       sql = "SELECT * FROM InterviewRecords WHERE StudentID = '$userId' ORDER BY Date DESC";
-    }
-
-    try {
-      var res = await _safeRead(sql);
-      if (res.isEmpty || res == "[]") return [];
-      
-      List<dynamic> list = jsonDecode(res);
-      return list.map((data) {
-        return InterviewRecord(
-          id: data['RecordID'].toString(),
-          studentId: userId,
-          date: DateTime.tryParse(data['Date'].toString()) ?? DateTime.now(),
-          durationSec: data['DurationSeconds'] ?? 0,
-          type: data['Type'] ?? '通用型',
-          interviewer: data['Interviewer'] ?? 'AI',
-          language: data['Language'] ?? '中文',
-          privacy: data['Privacy'] ?? 'Private',
-          scores: _parseScores(data['ScoresDetail']), 
-        );
-      }).toList();
-    } catch (e) {
-      print("讀取紀錄失敗: $e");
-      return [];
-    }
-  }
-
-  static Map<String, int> _parseScores(dynamic jsonStr) {
-    try {
-      if (jsonStr == null || jsonStr == "") return {'overall': 0};
-      return Map<String, int>.from(jsonDecode(jsonStr));
-    } catch (e) {
-      return {'overall': 0};
-    }
-  }
-
-  static Future<void> updatePrivacy(String recordId, String privacy) async {
-    String sql = "UPDATE InterviewRecords SET Privacy = '$privacy' WHERE RecordID = $recordId";
-    await _safeWrite(sql);
-  }
-
-  // ====================================================
-  //  留言與評論 (Comments)
-  // ====================================================
-
-  static Future<List<Comment>> getComments(String recordId) async {
-    String sql = """
-      SELECT c.*, u.Name as SenderName 
-      FROM RecordComments c 
-      JOIN Users u ON c.SenderID = u.UserID 
-      WHERE c.RecordID = $recordId 
-      ORDER BY c.SentAt ASC
-    """;
-    try {
-      var res = await _safeRead(sql);
-      if (res.isEmpty || res == "[]") return [];
-      return (jsonDecode(res) as List).map((x) => Comment(
-        id: x['CommentID'].toString(),
-        senderName: x['SenderName'],
-        content: x['Content'],
-        date: x['SentAt'].toString(),
-      )).toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<void> sendComment(String recordId, String userEmail, String content) async {
-    String userIdSql = userEmail.contains('@') 
-        ? "(SELECT UserID FROM Users WHERE Email = '$userEmail')" 
-        : "'$userEmail'";
-        
-    String sql = "INSERT INTO RecordComments (RecordID, SenderID, Content) VALUES ($recordId, $userIdSql, N'$content')";
-    await _safeWrite(sql);
-  }
-
-  // ====================================================
-  //  班級與成員 (Class Management)
-  // ====================================================
-
-  static Future<void> createClass(String name, String teacherEmail) async {
-    String sql = "INSERT INTO Classes (ClassName, TeacherID, InvitationCode) VALUES (N'$name', (SELECT UserID FROM Users WHERE Email = '$teacherEmail'), 'C${DateTime.now().millisecondsSinceEpoch}')";
-    await _safeWrite(sql);
-  }
-
+  // ==========================
+  // 班級管理 (重點修正)
+  // ==========================
   static Future<List<Class>> getTeacherClasses(String email) async {
-    String sql = "SELECT * FROM Classes WHERE TeacherID = (SELECT UserID FROM Users WHERE Email = '$email')";
-    return _parseClasses(await _safeRead(sql));
+    String sql =
+        "SELECT * FROM Classes WHERE TeacherID = (SELECT UserID FROM Users WHERE Email = '$email')";
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List).map((x) => Class.fromMap(x)).toList();
+  }
+
+  // ★ 修正版：建立班級 (先查 ID 再寫入，避免 Foreign Key 錯誤)
+  static Future<void> createClass(String name, String teacherEmail) async {
+    // 1. 先確認使用者存在
+    String idSql = "SELECT UserID FROM Users WHERE Email = '$teacherEmail'";
+    var idRes = await _safeRead(idSql);
+
+    if (idRes == "[]" || idRes.isEmpty) {
+      throw Exception("找不到您的帳號資料 ($teacherEmail)，請嘗試重新登入");
+    }
+
+    // 2. 取得 ID
+    var teacherId = jsonDecode(idRes)[0]['UserID'];
+
+    // 3. 生成 6 位數亂數代碼
+    String code = (Random().nextInt(900000) + 100000).toString();
+
+    // 4. 寫入班級
+    String sql =
+        "INSERT INTO Classes (ClassName, TeacherID, InvitationCode) VALUES (N'$name', $teacherId, '$code')";
+    await _safeWrite(sql);
+  }
+
+  static Future<List<Student>> getClassStudents(String classId) async {
+    String sql =
+        "SELECT u.UserID, u.Name FROM Users u JOIN ClassMembers cm ON u.UserID = cm.StudentID WHERE cm.ClassID = $classId";
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List)
+        .map((j) => Student(id: j['UserID'].toString(), name: j['Name']))
+        .toList();
   }
 
   static Future<List<Class>> getStudentClasses(String email) async {
-    String sql = "SELECT c.* FROM Classes c JOIN ClassMembers cm ON c.ClassID = cm.ClassID WHERE cm.StudentID = (SELECT UserID FROM Users WHERE Email = '$email')";
-    return _parseClasses(await _safeRead(sql));
+    String sql =
+        "SELECT c.* FROM Classes c JOIN ClassMembers cm ON c.ClassID = cm.ClassID WHERE cm.StudentID = (SELECT UserID FROM Users WHERE Email = '$email')";
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List).map((x) => Class.fromMap(x)).toList();
   }
 
   static Future<Class?> joinClass(String code, String email) async {
     String findSql = "SELECT * FROM Classes WHERE InvitationCode = '$code'";
-    var classes = _parseClasses(await _safeRead(findSql));
-    if (classes.isEmpty) throw Exception("找不到班級");
-    
-    Class target = classes.first;
-    String checkSql = "SELECT * FROM ClassMembers WHERE ClassID = ${target.id} AND StudentID = (SELECT UserID FROM Users WHERE Email = '$email')";
-    String checkRes = await _safeRead(checkSql);
-    if (checkRes != "[]" && checkRes.isNotEmpty) throw Exception("您已加入此班級");
+    var res = await _safeRead(findSql);
+    if (res == "[]" || res.isEmpty) throw Exception("找不到班級，請確認代碼是否正確");
+    Class cls = Class.fromMap(jsonDecode(res)[0]);
 
-    String joinSql = "INSERT INTO ClassMembers (ClassID, StudentID) VALUES (${target.id}, (SELECT UserID FROM Users WHERE Email = '$email'))";
-    await _safeWrite(joinSql);
-    return target;
+    String check = await _safeRead(
+      "SELECT * FROM ClassMembers WHERE ClassID = ${cls.id} AND StudentID = (SELECT UserID FROM Users WHERE Email = '$email')",
+    );
+    if (check != "[]" && check.isNotEmpty) throw Exception("您已加入此班級");
+
+    await _safeWrite(
+      "INSERT INTO ClassMembers (ClassID, StudentID) VALUES (${cls.id}, (SELECT UserID FROM Users WHERE Email = '$email'))",
+    );
+    return cls;
   }
 
-  static Future<List<Student>> getClassStudents(String classId) async {
-    String sql = "SELECT u.UserID, u.Name FROM Users u JOIN ClassMembers cm ON u.UserID = cm.StudentID WHERE cm.ClassID = $classId";
+  // ==========================
+  // 面試紀錄
+  // ==========================
+  static Future<List<InterviewRecord>> getRecords(
+    String userId,
+    String filter,
+  ) async {
+    String sql = userId.contains('@')
+        ? "SELECT * FROM InterviewRecords WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$userId') ORDER BY Date DESC"
+        : "SELECT * FROM InterviewRecords WHERE StudentID = '$userId' ORDER BY Date DESC";
+
     var res = await _safeRead(sql);
     if (res.isEmpty || res == "[]") return [];
-    return (jsonDecode(res) as List).map((j) => Student(id: j['UserID'].toString(), name: j['Name'])).toList();
+    List<dynamic> list = jsonDecode(res);
+    return list.map((d) => InterviewRecord.fromMap(d)).toList();
   }
 
-  static List<Class> _parseClasses(String jsonStr) {
-    if (jsonStr.isEmpty || jsonStr == "[]") return [];
-    try {
-      return (jsonDecode(jsonStr) as List).map((x) => Class.fromMap(x)).toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
-  // ====================================================
-  //  ★ 邀請與學習歷程 (Invitations & Portfolios) - 修正重點
-  // ====================================================
-
-  static Future<void> sendInvitation(String teacherEmail, String studentId, String msg) async {
-    String sql = "INSERT INTO Invitations (TeacherID, StudentID, Message) VALUES ((SELECT UserID FROM Users WHERE Email = '$teacherEmail'), $studentId, N'$msg')";
+  static Future<void> saveRecord(InterviewRecord r) async {
+    String scoresJson = jsonEncode(r.scores);
+    String sql =
+        "INSERT INTO InterviewRecords (StudentID, Date, DurationSeconds, Type, Interviewer, Language, OverallScore, ScoresDetail, Privacy) VALUES ((SELECT UserID FROM Users WHERE Email = '${r.studentId}'), GETDATE(), ${r.durationSec}, N'${r.type}', N'${r.interviewer}', N'${r.language}', ${r.overallScore}, '$scoresJson', '${r.privacy}')";
     await _safeWrite(sql);
   }
 
-  // ★ 修正：支援 userId 和 isTeacher 參數，並正確返回 Invitation 物件
-  static Future<List<Invitation>> getInvitations(String userId, bool isTeacher) async {
+  // ==========================
+  // 邀請與時段
+  // ==========================
+  static Future<void> sendInvitation(
+    String teacherEmail,
+    String studentId,
+    String msg,
+  ) async {
+    String sql =
+        "INSERT INTO Invitations (TeacherID, StudentID, Message) VALUES ((SELECT UserID FROM Users WHERE Email = '$teacherEmail'), $studentId, N'$msg')";
+    await _safeWrite(sql);
+  }
+
+  static Future<void> sendBulkInvitations(
+    String teacherEmail,
+    List<String> studentIds,
+    String msg,
+  ) async {
+    if (studentIds.isEmpty) return;
+    String teacherIdSql =
+        "(SELECT UserID FROM Users WHERE Email = '$teacherEmail')";
+    for (String sid in studentIds) {
+      String checkSql =
+          "SELECT * FROM Invitations WHERE TeacherID = $teacherIdSql AND StudentID = $sid AND Status = 'Pending'";
+      var check = await _safeRead(checkSql);
+      if (check == "[]" || check.isEmpty) {
+        String sql =
+            "INSERT INTO Invitations (TeacherID, StudentID, Message, SentAt, Status) VALUES ($teacherIdSql, $sid, N'$msg', GETDATE(), 'Pending')";
+        await _safeWrite(sql);
+      }
+    }
+  }
+
+  static Future<List<Invitation>> getInvitations(
+    String userId,
+    bool isTeacher,
+  ) async {
     String sql;
     if (isTeacher) {
-      // 老師查看自己發出的邀請
-      sql = """
-        SELECT i.*, u.Name as StudentName 
-        FROM Invitations i 
-        JOIN Users u ON i.StudentID = u.UserID 
-        WHERE i.TeacherID = $userId
-        ORDER BY i.SentAt DESC
-      """;
+      sql =
+          "SELECT i.*, u.Name as StudentName FROM Invitations i JOIN Users u ON i.StudentID = u.UserID WHERE i.TeacherID = $userId ORDER BY i.SentAt DESC";
     } else {
-      // 學生查看收到的邀請
-      sql = """
-        SELECT i.*, u.Name as TeacherName 
-        FROM Invitations i 
-        JOIN Users u ON i.TeacherID = u.UserID 
-        WHERE i.StudentID = $userId
-        ORDER BY i.SentAt DESC
-      """;
+      sql =
+          "SELECT i.*, u.Name as TeacherName FROM Invitations i JOIN Users u ON i.TeacherID = u.UserID WHERE i.StudentID = $userId ORDER BY i.SentAt DESC";
     }
-    
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List)
+        .map(
+          (x) => Invitation(
+            id: x['InvitationID'].toString(),
+            teacherName: x['TeacherName'] ?? '',
+            studentName: x['StudentName'] ?? '',
+            message: x['Message'],
+            status: x['Status'],
+            date: x['SentAt'].toString(),
+          ),
+        )
+        .toList();
+  }
+
+  static Future<void> updateInvitation(String id, String status) async {
+    await _safeWrite(
+      "UPDATE Invitations SET Status = '$status' WHERE InvitationID = $id",
+    );
+  }
+
+  static Future<void> addInterviewSlot(
+    String teacherEmail,
+    DateTime start,
+    DateTime end,
+  ) async {
+    String sql =
+        "INSERT INTO InterviewSlots (TeacherID, StartTime, EndTime, IsBooked) VALUES ((SELECT UserID FROM Users WHERE Email = '$teacherEmail'), '${start.toIso8601String()}', '${end.toIso8601String()}', 0)";
+    await _safeWrite(sql);
+  }
+
+  static Future<List<InterviewSlot>> getTeacherSlots(
+    String teacherEmail,
+  ) async {
+    String sql =
+        "SELECT s.*, u.Name as StudentName FROM InterviewSlots s LEFT JOIN Users u ON s.BookedByStudentID = u.UserID WHERE s.TeacherID = (SELECT UserID FROM Users WHERE Email = '$teacherEmail') ORDER BY s.StartTime ASC";
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List)
+        .map((x) => InterviewSlot.fromMap(x))
+        .toList();
+  }
+
+  static Future<void> deleteSlot(String slotId) async {
+    await _safeWrite("DELETE FROM InterviewSlots WHERE SlotID = $slotId");
+  }
+
+  static Future<List<InterviewSlot>> getAvailableSlots(
+    String teacherEmail,
+  ) async {
+    String sql =
+        "SELECT * FROM InterviewSlots WHERE TeacherID = (SELECT UserID FROM Users WHERE Email = '$teacherEmail') AND IsBooked = 0 AND StartTime > GETDATE() ORDER BY StartTime ASC";
+    var res = await _safeRead(sql);
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List)
+        .map((x) => InterviewSlot.fromMap(x))
+        .toList();
+  }
+
+  static Future<void> bookSlot(String slotId, String studentEmail) async {
+    String checkSql =
+        "SELECT IsBooked FROM InterviewSlots WHERE SlotID = $slotId";
+    var res = await _safeRead(checkSql);
+    if (res.contains("true") || res.contains(":1") || res.contains(": 1")) {
+      throw Exception("時段已被搶走");
+    }
+    String sql =
+        "UPDATE InterviewSlots SET IsBooked = 1, BookedByStudentID = (SELECT UserID FROM Users WHERE Email = '$studentEmail') WHERE SlotID = $slotId";
+    await _safeWrite(sql);
+  }
+
+  // 評論與學習歷程
+  static Future<List<Comment>> getComments(String recordId) async {
+    String sql =
+        "SELECT c.*, u.Name as SenderName FROM RecordComments c JOIN Users u ON c.SenderID = u.UserID WHERE c.RecordID = $recordId ORDER BY c.SentAt ASC";
     try {
       var res = await _safeRead(sql);
       if (res.isEmpty || res == "[]") return [];
-      return (jsonDecode(res) as List).map((x) => Invitation(
-        id: x['InvitationID'].toString(),
-        teacherName: x['TeacherName'] ?? '', // 學生看這欄
-        studentName: x['StudentName'] ?? '', // 老師看這欄
-        message: x['Message'],
-        status: x['Status'],
-        date: x['SentAt'].toString(),
-      )).toList();
+      return (jsonDecode(res) as List)
+          .map(
+            (x) => Comment(
+              id: x['CommentID'].toString(),
+              senderName: x['SenderName'],
+              content: x['Content'],
+              date: x['SentAt'].toString(),
+            ),
+          )
+          .toList();
     } catch (e) {
-      print("讀取邀請失敗: $e");
       return [];
     }
   }
 
-  // ★ 新增：更新邀請狀態 (接受/拒絕)
-  static Future<void> updateInvitation(String inviteId, String status) async {
-    String sql = "UPDATE Invitations SET Status = '$status' WHERE InvitationID = $inviteId";
+  static Future<void> sendComment(
+    String recordId,
+    String userEmail,
+    String content,
+  ) async {
+    String userIdSql = "(SELECT UserID FROM Users WHERE Email = '$userEmail')";
+    String sql =
+        "INSERT INTO RecordComments (RecordID, SenderID, Content) VALUES ($recordId, $userIdSql, N'$content')";
     await _safeWrite(sql);
   }
 
-  static Future<void> addPortfolio(String email, String title) async {
-    String sql = "INSERT INTO LearningPortfolios (StudentID, Title) VALUES ((SELECT UserID FROM Users WHERE Email = '$email'), N'$title')";
-    await _safeWrite(sql);
+  static Future<void> updatePrivacy(String recordId, String privacy) async {
+    await _safeWrite(
+      "UPDATE InterviewRecords SET Privacy = '$privacy' WHERE RecordID = $recordId",
+    );
   }
 
   static Future<List<LearningPortfolio>> getPortfolios(String email) async {
-    String sql = "SELECT * FROM LearningPortfolios WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$email') ORDER BY UploadDate DESC";
+    String sql =
+        "SELECT * FROM LearningPortfolios WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$email') ORDER BY UploadDate DESC";
     var res = await _safeRead(sql);
-    if (res.isEmpty || res == "[]") return [];
-    return (jsonDecode(res) as List).map((x) => LearningPortfolio(
-      id: x['PortfolioID'].toString(),
-      title: x['Title'],
-      uploadDate: x['UploadDate'].toString().split('T')[0],
-    )).toList();
+    if (res == "[]" || res.isEmpty) return [];
+    return (jsonDecode(res) as List)
+        .map(
+          (x) => LearningPortfolio(
+            id: x['PortfolioID'].toString(),
+            title: x['Title'],
+            uploadDate: x['UploadDate'].toString(),
+          ),
+        )
+        .toList();
+  }
+
+  static Future<void> addPortfolio(String email, String title) async {
+    await _safeWrite(
+      "INSERT INTO LearningPortfolios (StudentID, Title) VALUES ((SELECT UserID FROM Users WHERE Email = '$email'), N'$title')",
+    );
   }
 }

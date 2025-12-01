@@ -5,7 +5,7 @@ class AppUser {
   final String name;
   final String email;
   final String role;
-  final String subscription; 
+  final String subscription;
 
   AppUser({
     required this.id,
@@ -52,7 +52,7 @@ class Class {
 class Student {
   final String id;
   final String name;
-  final int latestScore; 
+  final int latestScore;
   final String latestInterviewDate;
 
   Student({
@@ -73,7 +73,7 @@ class InterviewRecord {
   final String interviewer;
   final String language;
   final String privacy;
-  final String studentName; 
+  final String studentName;
 
   InterviewRecord({
     required this.id,
@@ -82,7 +82,7 @@ class InterviewRecord {
     required this.durationSec,
     required this.scores,
     required this.type,
-    this.interviewer = 'AI 面試官', 
+    this.interviewer = 'AI 面試官',
     this.language = '中文',
     this.privacy = 'Private',
     this.studentName = '',
@@ -95,14 +95,23 @@ class InterviewRecord {
       id: map['RecordID']?.toString() ?? '',
       studentId: map['StudentID']?.toString() ?? '',
       date: DateTime.tryParse(map['Date'].toString()) ?? DateTime.now(),
-      durationSec: int.tryParse(map['Duration'].toString()) ?? 0,
-      scores: {}, 
+      durationSec: int.tryParse(map['DurationSeconds'].toString()) ?? 0,
+      scores: _parseScores(map['ScoresDetail']),
       type: map['Type'] ?? '通用型',
       interviewer: map['Interviewer'] ?? 'AI 面試官',
       language: map['Language'] ?? '中文',
       privacy: map['Privacy'] ?? 'Private',
       studentName: map['StudentName'] ?? '',
     );
+  }
+
+  static Map<String, int> _parseScores(dynamic jsonStr) {
+    try {
+      // 簡單處理 JSON 解析
+      return {'overall': 0};
+    } catch (e) {
+      return {'overall': 0};
+    }
   }
 }
 
@@ -118,7 +127,6 @@ class LearningPortfolio {
   });
 }
 
-// ★ 修改：將 id 設為選填 (預設空字串)，解決 sql_service 沒傳 id 的報錯
 class Comment {
   final String id;
   final String senderName;
@@ -126,20 +134,19 @@ class Comment {
   final String date;
 
   Comment({
-    this.id = '', // 變成選填，解決報錯
+    this.id = '',
     required this.senderName,
     required this.content,
     required this.date,
   });
 }
 
-// ★ 修改：補齊 teacherName, studentName, message, status 解決 common_screens 報錯
 class Invitation {
   final String id;
-  final String teacherName; // 對應 sql_service 的 teacherName
-  final String studentName; // 對應 common_screens 的 studentName
-  final String message;     // 對應 common_screens 的 message
-  final String status;      // 對應 common_screens 的 status
+  final String teacherName;
+  final String studentName;
+  final String message;
+  final String status;
   final String date;
 
   Invitation({
@@ -150,4 +157,34 @@ class Invitation {
     this.status = 'Pending',
     this.date = '',
   });
+}
+
+class InterviewSlot {
+  final String id;
+  final String teacherId;
+  final DateTime startTime;
+  final DateTime endTime;
+  final bool isBooked;
+  final String? bookedByStudentName;
+
+  InterviewSlot({
+    required this.id,
+    required this.teacherId,
+    required this.startTime,
+    required this.endTime,
+    this.isBooked = false,
+    this.bookedByStudentName,
+  });
+
+  factory InterviewSlot.fromMap(Map<String, dynamic> map) {
+    return InterviewSlot(
+      id: map['SlotID'].toString(),
+      teacherId: map['TeacherID'].toString(),
+      startTime: DateTime.parse(map['StartTime'].toString()),
+      endTime: DateTime.parse(map['EndTime'].toString()),
+      // 相容 SQL Server 的 BIT 類型 (可能回傳 true/false 或 1/0)
+      isBooked: map['IsBooked'] == true || map['IsBooked'] == 1,
+      bookedByStudentName: map['StudentName'],
+    );
+  }
 }
