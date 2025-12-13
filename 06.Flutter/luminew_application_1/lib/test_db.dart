@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:mysql1/mysql1.dart';
+import 'package:sql_conn/sql_conn.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: "MySQL 連線測試", home: TestPage());
+    return const MaterialApp(title: "SQL Server 測試", home: TestPage());
   }
 }
 
@@ -24,50 +24,47 @@ class TestPage extends StatefulWidget {
 }
 
 class _TestPageState extends State<TestPage> {
+  // 狀態文字 讓我們知道發生什麼事
   String status = "尚未連線";
-  MySqlConnection? _conn;
 
-  // 1. 連線測試
-  Future<void> connect() async {
-    setState(() => status = "連線中...");
-
-    var settings = ConnectionSettings(
-      host: '10.0.2.2', // 模擬器連電腦 IP
-      port: 3306,
-      user: 'root',
-      password: '',
-      db: 'LuminewDB',
-    );
+  Future<void> connect(BuildContext ctx) async {
+    setState(() {
+      status = "連線中...";
+    });
 
     try {
-      _conn = await MySqlConnection.connect(settings);
-      setState(() => status = "✅ MySQL 連線成功！");
-      print("Connected!");
+      await SqlConn.connect(
+        ip: "10.0.2.2", // 👈 關鍵：模擬器連電腦專用 IP
+        port: "1433", // 👈 剛剛開通的 Port
+        databaseName: "LuminewDB", // 👈 剛剛在 SSMS 建立的資料庫
+        username: "sa", // 👈 剛剛啟用的帳號
+        password: "112233", // 👈 剛剛設定的密碼 (如果不一樣請自己改)
+      );
+
+      setState(() {
+        status = "✅ 連線成功！(Connected)";
+      });
+      debugPrint("Connected!");
     } catch (e) {
-      setState(() => status = "❌ 連線失敗：\n$e");
-      print(e);
+      setState(() {
+        status = "❌ 連線失敗：\n$e";
+      });
+      debugPrint(e.toString());
     }
   }
 
-  // 2. 讀取測試
   Future<void> read() async {
-    if (_conn == null) {
-      setState(() => status = "⚠️ 請先連線");
-      return;
-    }
     try {
-      var results = await _conn!.query('SELECT * FROM Users');
-      String display = "";
-      if (results.isEmpty) {
-        display = "資料表是空的";
-      } else {
-        for (var row in results) {
-          display += "ID: ${row['UserID']}, Name: ${row['Name']}\n";
-        }
-      }
-      setState(() => status = "讀取資料成功：\n$display");
+      // 讀取剛剛建立的 Users 表格
+      var res = await SqlConn.readData("SELECT * FROM Users");
+      setState(() {
+        status = "讀取資料成功：\n$res";
+      });
+      debugPrint(res.toString());
     } catch (e) {
-      setState(() => status = "讀取失敗：$e");
+      setState(() {
+        status = "讀取失敗：$e";
+      });
     }
   }
 
@@ -75,23 +72,36 @@ class _TestPageState extends State<TestPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MySQL 測試'),
-        backgroundColor: Colors.blue,
+        title: const Text('SQL Server 連線測試'),
+        backgroundColor: Colors.deepOrange,
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              status,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(onPressed: connect, child: const Text("1. 連線")),
-            const SizedBox(height: 20),
-            ElevatedButton(onPressed: read, child: const Text("2. 讀取 Users")),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                status,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 30),
+
+              // --- 這就是你要找的按鈕 ---
+              ElevatedButton.icon(
+                onPressed: () => connect(context),
+                icon: const Icon(Icons.wifi),
+                label: const Text("1. 連線 (Connect)"),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => read(),
+                icon: const Icon(Icons.read_more),
+                label: const Text("2. 讀取資料 (Read)"),
+              ),
+            ],
+          ),
         ),
       ),
     );
