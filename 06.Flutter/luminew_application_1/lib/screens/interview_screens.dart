@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http; // 確保 pubspec.yaml 有 http
 import '../models.dart';
 import '../mock_data.dart';
 import '../sql_service.dart'; // 必須引用，用於存檔與讀取留言
+import 'package:fl_chart/fl_chart.dart';
 
 // 全域變數：用來儲存可用的相機列表
 List<CameraDescription> cameras = [];
@@ -69,7 +70,8 @@ class _InterviewRecordListScreenState extends State<InterviewRecordListScreen> {
                     MaterialPageRoute(
                       // 點擊後進入詳細結果頁 (包含留言功能)
                       builder: (_) =>
-                          InterviewResultScreen(record: r, user: widget.user),
+                          InterviewResultScreen(record: r, user: widget.user,aiComment: r.aiComment,
+                        aiSuggestion: r.aiSuggestion),
                     ),
                   ),
                 ),
@@ -250,7 +252,7 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
           orElse: () => cameras.first,
         );
 
-        _controller = CameraController(frontCam, ResolutionPreset.medium);
+        _controller = CameraController(frontCam, ResolutionPreset.low);
         await _controller!.initialize();
         if (mounted) setState(() {});
       } else {
@@ -314,14 +316,14 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
       // ★★★ IP 設定：請確認這裡改成您電腦的 IP ★★★
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://192.168.1.119:5000/analyze'),
+        Uri.parse('http://10.0.2.2:5000/analyze'),
       );
 
       request.files.add(await http.MultipartFile.fromPath('video', file.path));
 
       print("正在上傳影片...");
       var streamedResponse = await request.send().timeout(
-        const Duration(seconds: 45),
+        const Duration(seconds: 300),
         onTimeout: () {
           throw Exception("連線逾時，請檢查 Python Server 是否開啟");
         },
@@ -333,6 +335,7 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
         final data = jsonDecode(response.body);
         final emotions = data['emotions'];
         final ai = data['ai_analysis'];
+        final timelineList = data['timeline'] ?? [];
 
         // 建立紀錄物件
         final r = InterviewRecord(
@@ -345,11 +348,15 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
             'confidence': emotions['confidence'] ?? 0,
             'passion': emotions['passion'] ?? 0,
             'nervous': emotions['nervous'] ?? 0,
+            'relaxed': emotions['relaxed'] ?? 0,
           },
           type: widget.type,
           interviewer: widget.interviewer,
           language: widget.language,
           privacy: 'Private',
+          aiComment: ai['comment'] ?? '',
+          aiSuggestion: ai['suggestion'] ?? '',
+          timelineData: jsonEncode(timelineList)
         );
 
         // 1. 存入 Mock (即時顯示用)
@@ -552,6 +559,22 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
   final _commentCtrl = TextEditingController();
   List<Comment> _comments = [];
 
+  bool _isIndexMode = false;
+
+  // ★★★ 新增這個函式：用來判斷分數顏色 ★★★
+  List<Color> _getScoreGradient(int score) {
+    if (score < 61) {
+      // 60分(含)以下：紅色 (警示)
+      return [Colors.red.shade700, Colors.redAccent];
+    } else if (score <= 80) {
+      // 61-80分：綠色 (及格/良好)
+      return [Colors.green.shade700, Colors.greenAccent];
+    } else {
+      // 81分(含)以上：藍色 (優秀)
+      return [Colors.indigo, Colors.blueAccent];
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -601,6 +624,16 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ★★★ 新增這段：定義資料並由高到低排序 ★★★
+    final statList = [
+      {'label': "自信 (Confidence)", 'score': widget.record.scores['confidence'] ?? 0, 'color': Colors.blue},
+      {'label': "熱忱 (Passion)", 'score': widget.record.scores['passion'] ?? 0, 'color': Colors.red},
+      {'label': "緊張 (Nervous)", 'score': widget.record.scores['nervous'] ?? 0, 'color': Colors.orange},
+      {'label': "沈穩 (Relaxed)", 'score': widget.record.scores['relaxed'] ?? 0, 'color': Colors.green},
+    ];
+    // 從大排到小
+    statList.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -619,6 +652,9 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
             // ------------------------------------
             // Tab 1: AI 分析報告 (顯示圖表與評語)
             // ------------------------------------
+            // ------------------------------------
+            // Tab 1: AI 分析報告 (顯示圖表與評語)
+            // ------------------------------------
             SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -626,10 +662,20 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Colors.indigo, Colors.blueAccent],
+                      // ★ 改成動態顏色
+                      gradient: LinearGradient(
+                        colors: _getScoreGradient(widget.record.overallScore),
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _getScoreGradient(widget.record.overallScore).last.withOpacity(0.4),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        )
+                      ],
                     ),
                     child: Column(
                       children: [
@@ -645,9 +691,11 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        // ★★★ 順便把評語文字也改成對應的 ★★★
                         Text(
-                          widget.record.overallScore >= 80 ? '表現優異！' : '還有進步空間',
-                          style: const TextStyle(color: Colors.white),
+                          widget.record.overallScore >= 90 ? '表現完美！' :
+                          widget.record.overallScore >= 61 ? '表現不錯！' : '加油，再接再厲',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -718,21 +766,57 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _buildStatRow(
-                    "自信 (Confidence)",
-                    widget.record.scores['confidence'] ?? 0,
-                    Colors.blue,
+
+                  const SizedBox(height: 20),
+
+                  // 1. 切換按鈕 (情緒版 vs 索引版)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildTabButton("情緒 % 數版", !_isIndexMode, () {
+                          setState(() => _isIndexMode = false);
+                        }),
+                        _buildTabButton("索引型 (次數)", _isIndexMode, () {
+                          setState(() => _isIndexMode = true);
+                        }),
+                      ],
+                    ),
                   ),
-                  _buildStatRow(
-                    "熱忱 (Passion)",
-                    widget.record.scores['passion'] ?? 0,
-                    Colors.red,
-                  ),
-                  _buildStatRow(
-                    "緊張 (Nervous)",
-                    widget.record.scores['nervous'] ?? 0,
-                    Colors.orange,
-                  ),
+                  const SizedBox(height: 20),
+
+                  // 2. 根據模式顯示對應的圖表
+                  if (!_isIndexMode) ...[
+                    // === 模式 A: %數型 ===
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("情緒平均佔比", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildPercentageBars(), // 呼叫長條圖
+                    
+                    const SizedBox(height: 30),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("情緒波動曲線", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildTimelineChart(), // 呼叫曲線圖
+                  ] else ...[
+                    // === 模式 B: 索引型 ===
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("主導情緒統計 (Winner Takes All)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildIndexCountView(), // 呼叫次數統計
+                  ],
+                  
+                  const SizedBox(height: 20),
 
                   const SizedBox(height: 30),
 
@@ -911,6 +995,255 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
           ),
         ],
       ),
+    );
+  }
+  // 1. 切換按鈕樣式
+  Widget _buildTabButton(String text, bool isActive, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.indigo : Colors.transparent,
+            borderRadius: BorderRadius.circular(25),
+          ),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isActive ? Colors.white : Colors.grey[600],
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 2. 長條圖
+  Widget _buildPercentageBars() {
+    final statList = [
+      {'label': "自信", 'score': widget.record.scores['confidence'] ?? 0, 'color': Colors.blue},
+      {'label': "熱忱", 'score': widget.record.scores['passion'] ?? 0, 'color': Colors.red},
+      {'label': "緊張", 'score': widget.record.scores['nervous'] ?? 0, 'color': Colors.orange},
+      {'label': "沈穩", 'score': widget.record.scores['relaxed'] ?? 0, 'color': Colors.green},
+    ];
+    statList.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+
+    return Column(
+      children: statList.map((item) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(item['label'] as String, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text("${item['score']}%", style: TextStyle(color: item['color'] as Color, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 5),
+            LinearProgressIndicator(
+              value: (item['score'] as int) / 100,
+              color: item['color'] as Color,
+              backgroundColor: Colors.grey[200],
+              minHeight: 10,
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ],
+        ),
+      )).toList(),
+    );
+  }
+
+  // 3. 索引型統計
+  Widget _buildIndexCountView() {
+    List<dynamic> timeline = [];
+    try {
+      timeline = jsonDecode(widget.record.timelineData);
+    } catch (e) {
+      return const Text("無詳細數據");
+    }
+
+    if (timeline.isEmpty) return const Text("數據不足");
+
+    Map<String, int> counts = {'c': 0, 'p': 0, 'n': 0, 'r': 0};
+    int total = timeline.length;
+
+    for (var point in timeline) {
+      int c = point['c'];
+      int p = point['p'];
+      int n = point['n'];
+      int r = point['r'];
+      
+      int maxVal = [c, p, n, r].reduce((curr, next) => curr > next ? curr : next);
+      
+      if (c == maxVal) counts['c'] = counts['c']! + 1;
+      else if (p == maxVal) counts['p'] = counts['p']! + 1;
+      else if (n == maxVal) counts['n'] = counts['n']! + 1;
+      else if (r == maxVal) counts['r'] = counts['r']! + 1;
+    }
+
+    return Column(
+      children: [
+        _buildCountRow("自信 (Confidence)", counts['c']!, total, Colors.blue),
+        _buildCountRow("熱忱 (Passion)", counts['p']!, total, Colors.red),
+        _buildCountRow("緊張 (Nervous)", counts['n']!, total, Colors.orange),
+        _buildCountRow("沈穩 (Relaxed)", counts['r']!, total, Colors.green),
+      ],
+    );
+  }
+
+  Widget _buildCountRow(String label, int count, int total, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(width: 4, height: 40, color: color),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text("主導了 $count 秒", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                ],
+              ),
+            ],
+          ),
+          Text(
+            "${count}s", 
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 4. 曲線圖 (已修正：移除所有會報錯的 const)
+  // 4. 曲線圖 (移除觸摸提示版)
+  Widget _buildTimelineChart() {
+    List<dynamic> timeline = [];
+    try {
+      timeline = jsonDecode(widget.record.timelineData);
+    } catch (_) {
+      return const SizedBox();
+    }
+    
+    if (timeline.isEmpty) return const Center(child: Text("無時間軸數據"));
+
+    // 計算最大秒數，用來設定 X 軸範圍
+    double maxSeconds = 0;
+    if (timeline.isNotEmpty) {
+      maxSeconds = (timeline.last['t'] as num).toDouble();
+    }
+
+    return Container(
+      height: 250,
+      padding: const EdgeInsets.only(right: 24, left: 12, top: 24, bottom: 12),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: 100,
+          minX: 0,
+          maxX: maxSeconds > 0 ? maxSeconds : 10, // 動態設定 X 軸長度
+          
+          // 1. 網格設定
+          gridData: FlGridData(
+            show: true, 
+            verticalInterval: 1, // 每 1 秒一條垂直線
+            horizontalInterval: 20, // 每 20 分一條水平線
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+            getDrawingVerticalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+          ),
+
+          // 2. 標題與刻度
+          titlesData: FlTitlesData(
+            // 下方 X 軸 (時間)
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1, // 每 1 秒顯示一次刻度
+                reservedSize: 30,
+                getTitlesWidget: (val, meta) {
+                  if (val % 1 != 0) return const SizedBox.shrink(); 
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      "${val.toInt()}s", 
+                      style: const TextStyle(fontSize: 10, color: Colors.grey)
+                    ),
+                  );
+                },
+              ),
+            ),
+            // 左側 Y 軸 (分數 0-100)
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 20,     // 0, 20, 40, 60, 80, 100
+                reservedSize: 40,
+                getTitlesWidget: (val, meta) {
+                  return Text(
+                    "${val.toInt()}", 
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)
+                  );
+                },
+              ),
+            ),
+            // 上方與右方不顯示
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+
+          // 3. 邊框
+          borderData: FlBorderData(
+            show: true, 
+            border: Border.all(color: Colors.grey[300]!)
+          ),
+
+          // 4. 線條數據
+          lineBarsData: [
+            _buildLine(timeline, 'c', Colors.blue),   // 自信
+            _buildLine(timeline, 'p', Colors.red),    // 熱忱
+            _buildLine(timeline, 'n', Colors.orange), // 緊張
+            _buildLine(timeline, 'r', Colors.green),  // 沈穩
+          ],
+          
+          // 這裡原本的第 5 點已移除
+        ),
+      ),
+    );
+  }
+
+  LineChartBarData _buildLine(List<dynamic> data, String key, Color color) {
+    return LineChartBarData(
+      spots: data.map((e) => FlSpot((e['t'] as num).toDouble(), (e[key] as num).toDouble())).toList(),
+      isCurved: true, 
+      color: color,
+      barWidth: 3, 
+      isStrokeCapRound: true,
+      // 顯示資料點
+      dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) {
+        return FlDotCirclePainter(
+          radius: 2,
+          color: Colors.white,
+          strokeWidth: 2,
+          strokeColor: color,
+        );
+      }),
+      belowBarData: BarAreaData(show: false),
     );
   }
 }

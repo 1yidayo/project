@@ -42,6 +42,9 @@ dependencies:
   sql_conn: ^0.0.3
   camera: ^0.11.3
   http: ^1.6.0
+  fl_chart: ^1.1.1
+  permission_handler: ^11.3.0  # 必加：管理相機與麥克風權限
+  path_provider: ^2.1.2        # 必加：處理影片存檔路徑
 
 dev_dependencies:
   flutter_test:

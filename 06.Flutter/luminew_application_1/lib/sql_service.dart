@@ -183,9 +183,39 @@ class SqlService {
     String scoresJson = jsonEncode(r.scores);
     String safeComment = r.aiComment.replaceAll("'", "''");
     String safeSuggestion = r.aiSuggestion.replaceAll("'", "''");
-    String sql = "INSERT INTO InterviewRecords (StudentID, Date, DurationSeconds, Type, Interviewer, Language, OverallScore, ScoresDetail, Privacy, AIComment, AISuggestion) VALUES ((SELECT UserID FROM Users WHERE Email = '${r.studentId}'), GETDATE(), ${r.durationSec}, N'${r.type}', N'${r.interviewer}', N'${r.language}', ${r.overallScore}, '$scoresJson', '${r.privacy}', N'$safeComment', N'$safeSuggestion')";
+    String safeTimeline = r.timelineData.replaceAll("'", "''");
+    String sql = 
+        "INSERT INTO InterviewRecords ("
+        "  StudentID, "
+        "  Date, "
+        "  DurationSeconds, "
+        "  Type, "
+        "  Interviewer, "
+        "  Language, "
+        "  OverallScore, "
+        "  ScoresDetail, "
+        "  Privacy, "
+        "  AIComment, "
+        "  AISuggestion, "
+        "  TimelineData"
+        ") "
+        "VALUES ("
+        "  (SELECT UserID FROM Users WHERE Email = '${r.studentId}'), " // StudentID (子查詢)
+        "  GETDATE(), "           // Date
+        "  ${r.durationSec}, "    // DurationSeconds
+        "  N'${r.type}', "        // Type (注意 N 前綴)
+        "  N'${r.interviewer}', " // Interviewer
+        "  N'${r.language}', "    // Language
+        "  ${r.overallScore}, "   // OverallScore
+        "  '$scoresJson', "       // ScoresDetail
+        "  '${r.privacy}', "      // Privacy
+        "  N'$safeComment', "     // AIComment
+        "  N'$safeSuggestion', "  // AISuggestion
+        "  '$safeTimeline'"       // TimelineData
+        ")";
     await _safeWrite(sql);
   }
+
 
   // ==========================
   // 邀請與時段

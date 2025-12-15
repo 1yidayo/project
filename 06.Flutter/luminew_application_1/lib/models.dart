@@ -74,6 +74,9 @@ class InterviewRecord {
   final String language;
   final String privacy;
   final String studentName;
+  final String aiComment;
+  final String aiSuggestion;
+  final String timelineData;
 
   InterviewRecord({
     required this.id,
@@ -82,10 +85,13 @@ class InterviewRecord {
     required this.durationSec,
     required this.scores,
     required this.type,
+    this.timelineData = '[]',
     this.interviewer = 'AI 面試官',
     this.language = '中文',
     this.privacy = 'Private',
     this.studentName = '',
+    this.aiComment = '',
+    this.aiSuggestion = '',
   });
 
   int get overallScore => scores['overall'] ?? 0;
@@ -102,6 +108,9 @@ class InterviewRecord {
       language: map['Language'] ?? '中文',
       privacy: map['Privacy'] ?? 'Private',
       studentName: map['StudentName'] ?? '',
+      aiComment: map['AIComment'] ?? '',
+      aiSuggestion: map['AISuggestion'] ?? '',
+      timelineData: map['TimelineData'] ?? '[]',
     );
   }
 
