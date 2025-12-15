@@ -44,7 +44,7 @@ def handle_asr_text(text):
     print(f"[ASR] {text}")
     asr_buffer += text + " "
     last_final = text
-
+  
 
 # --- 關麥後：送 GPT + TTS + 自動開麥 ---
 def process_student_speech():
@@ -125,4 +125,4 @@ if __name__ == "__main__":
             time.sleep(0.05)
 
             process_student_speech()
-  
+   
