@@ -1,0 +1,102 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Teacher-Student-System Flow">
+    <mxGraphModel dx="2200" dy="1400" page="1" pageWidth="827" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Teacher -->
+        <mxCell id="t_lane" value="老師 (Teacher)" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="40" width="300" height="620" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_start" value="開始" style="ellipse;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="70" width="80" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_131" value="13.1 建立班級" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="130" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_code" value="產生邀請碼" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="200" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_share" value="分享代碼" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="270" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_list" value="查看名單" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="340" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_invite" value="邀請學生" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="410" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t_send" value="10.1 發送邀請" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="970" y="480" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Student -->
+        <mxCell id="s_lane" value="學生 (Student)" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="300" width="300" height="620" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_91" value="9.1 輸入代碼" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="170" y="340" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_wait" value="等待通知" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="170" y="410" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_61" value="6.1 查看邀請" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="170" y="480" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_62" value="6.2 同意？" style="rhombus;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="180" y="560" width="140" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_yes" value="同意" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="320" y="650" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_63" value="6.3 設定" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="320" y="720" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_no" value="拒絕" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="60" y="650" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_end" value="結束" style="ellipse;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="160" y="800" width="80" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- System -->
+        <mxCell id="sys_lane" value="系統 (System)" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="300" width="300" height="620" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sys_21" value="2.1 推送通知" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="570" y="360" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sys_update" value="更新狀態" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="570" y="520" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sys_22" value="2.2 通知教師" style="rounded=1;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="570" y="590" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sys_end" value="流程結束" style="ellipse;fontFamily=Times New Roman;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="610" y="680" width="100" height="40" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
