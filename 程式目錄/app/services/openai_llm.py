@@ -1,11 +1,15 @@
+# openai_llm.py
 # call_openai.py（把 ASR 的文字送給 gpt-4.1-nano）
-
 import requests
 import time
+from dotenv import load_dotenv
+import os
 
-OPENAI_API_KEY = "替換"
-OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+# 讀取 .env
+load_dotenv()
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # 從 .env 拿
+OPENAI_RESPONSES_URL = os.getenv("OPENAI_RESPONSES_URL")
 
 def ask_gpt4_1_nano(prompt, system_instructions=None, retry=3):
     headers = {
@@ -26,17 +30,13 @@ def ask_gpt4_1_nano(prompt, system_instructions=None, retry=3):
             r = requests.post(OPENAI_RESPONSES_URL, json=payload, headers=headers, timeout=10)
             r.raise_for_status()
             data = r.json()
-
-            # 正確解析
             return data["output"][0]["content"][0]["text"]
-
         except Exception as e:
             print(f"[GPT] 第 {attempt+1} 次請求失敗：{e}")
             if attempt < retry - 1:
-                time.sleep(1)  # 等一秒再重試
+                time.sleep(1)
                 continue
             return "(GPT 回應失敗)"
-
 
 # 測試
 if __name__ == "__main__":

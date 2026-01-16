@@ -1,20 +1,24 @@
 # yating_tts.py（把 GPT 回覆文字送給 Yating TTS，取回音檔並用 sounddevice 播放）
-
 import requests
 import io
 import base64
 import numpy as np
 import sounddevice as sd
 from pydub import AudioSegment
+from dotenv import load_dotenv
+import os
 
-YATING_TTS_URL = "https://tts.api.yating.tw/v2/speeches/short"
-YATING_API_KEY = "6aa8c608b8541c2886a0e0222aa57ff2090b2b8e"
+# 讀取 .env
+load_dotenv()
+
+YATING_API_KEY = os.getenv("YATING_TTS_KEY")
+YATING_TTS_URL = os.getenv("YATING_TTS_URL")
+
 
 def play_audiosegment_sd(audio: AudioSegment):
     """
     使用 sounddevice 播放 AudioSegment
     """
-    # 轉成 numpy array
     samples = np.array(audio.get_array_of_samples())
 
     # 如果是 stereo，要 reshape
@@ -65,5 +69,6 @@ def synthesize_and_play(text: str):
     play_audiosegment_sd(audio)
 
 
+# 測試
 if __name__ == "__main__":
     synthesize_and_play("你好，我是你的模擬教授。請問你想先練習哪個主題？")

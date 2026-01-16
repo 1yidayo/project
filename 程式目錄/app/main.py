@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from app.api import stt, llm, tts
 
-app = FastAPI(title="AI Professor Backend")
+app = FastAPI(title="Luminew 語音練習系統")
 
-# REST API
-app.include_router(llm.router, prefix="/llm")
-app.include_router(tts.router, prefix="/tts")
+# 加入路由
+app.include_router(stt.router, prefix="/stt", tags=["ASR"])
+app.include_router(llm.router, prefix="/llm", tags=["LLM"])
+app.include_router(tts.router, prefix="/tts", tags=["TTS"])
 
-# WebSocket
-app.include_router(stt.router)
+@app.get("/")
+def root():
+    return {"message": "Luminew 即時語音練習 API 正在運行"}
