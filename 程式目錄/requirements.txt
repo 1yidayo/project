@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+requests
+websockets
+sounddevice
+numpy
+pydub
+simpleaudio
