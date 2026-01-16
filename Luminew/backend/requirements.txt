@@ -1,0 +1,9 @@
+fastapi          # 後端 API 框架
+uvicorn[standard]          # FastAPI 啟動伺服器
+requests         # 呼叫 OpenAI / Yating API
+websockets       # 即時語音 / ASR WebSocket
+sounddevice      # 播放音訊（你要換掉 simpleaudio）
+numpy            # sounddevice 需要
+pydub            # 處理 mp3 / wav
+python-dotenv    # 讀取 .env（注意不是 dotenv）
+pydantic         # FastAPI 資料驗證（FastAPI 會用到）
