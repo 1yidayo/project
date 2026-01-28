@@ -169,14 +169,38 @@ class SqlService {
     String userId,
     String filter,
   ) async {
+    // ★ 修改：不使用 SELECT *，而是明確列出欄位並處理引號問題 (防止 JSON 解析失敗)
+    // 將 DB 裡的雙引號 " 替換成 單引號 '，避免 sql_conn 回傳時格式炸裂
+    // 使用 CHAR(39) 代表單引號，避免 Dart 字串轉義問題
+    String safeSelect = "RecordID, StudentID, Date, DurationSeconds, Type, Interviewer, Language, OverallScore, "
+        "REPLACE(ScoresDetail, CHAR(34), CHAR(39)) as ScoresDetail, "
+        "Privacy, "
+        "REPLACE(AIComment, CHAR(34), CHAR(39)) as AIComment, "
+        "REPLACE(AISuggestion, CHAR(34), CHAR(39)) as AISuggestion, "
+        "REPLACE(TimelineData, CHAR(34), CHAR(39)) as TimelineData, "  // CHAR(34)=雙引號, CHAR(39)=單引號
+        "VideoUrl";
+
     String sql = userId.contains('@')
-        ? "SELECT * FROM InterviewRecords WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$userId') ORDER BY Date DESC"
-        : "SELECT * FROM InterviewRecords WHERE StudentID = '$userId' ORDER BY Date DESC";
+        ? "SELECT $safeSelect FROM InterviewRecords WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$userId') ORDER BY Date DESC"
+        : "SELECT $safeSelect FROM InterviewRecords WHERE StudentID = '$userId' ORDER BY Date DESC";
 
     var res = await _safeRead(sql);
     if (res.isEmpty || res == "[]") return [];
     List<dynamic> list = jsonDecode(res);
     return list.map((d) => InterviewRecord.fromMap(d)).toList();
+  }
+
+  // ★ 新增：刪除面試紀錄
+  static Future<void> deleteRecord(String recordId) async {
+    // 先刪除相關留言 (避免外鍵衝突)，如果 Comments 表不存在就跳過
+    try {
+      await _safeWrite("DELETE FROM Comments WHERE RecordID = $recordId");
+    } catch (e) {
+      print("⚠️ 刪除留言時出錯 (可能表不存在): $e");
+      // 繼續執行，不中斷
+    }
+    // 再刪除紀錄本身
+    await _safeWrite("DELETE FROM InterviewRecords WHERE RecordID = $recordId");
   }
 
   static Future<void> saveRecord(InterviewRecord r) async {
@@ -197,7 +221,8 @@ class SqlService {
         "  Privacy, "
         "  AIComment, "
         "  AISuggestion, "
-        "  TimelineData"
+        "  TimelineData, "
+        "  VideoUrl" // ★ 新增
         ") "
         "VALUES ("
         "  (SELECT UserID FROM Users WHERE Email = '${r.studentId}'), " // StudentID (子查詢)
@@ -211,7 +236,8 @@ class SqlService {
         "  '${r.privacy}', "      // Privacy
         "  N'$safeComment', "     // AIComment
         "  N'$safeSuggestion', "  // AISuggestion
-        "  '$safeTimeline'"       // TimelineData
+        "  '$safeTimeline', "     // TimelineData
+        "  '${r.videoUrl}'"       // ★ 新增
         ")";
     await _safeWrite(sql);
   }

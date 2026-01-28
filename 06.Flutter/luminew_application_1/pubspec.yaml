@@ -45,6 +45,7 @@ dependencies:
   fl_chart: ^1.1.1
   permission_handler: ^11.3.0  # 必加：管理相機與麥克風權限
   path_provider: ^2.1.2        # 必加：處理影片存檔路徑
+  video_player: ^2.8.2         # 必加：影片播放器
 
 dev_dependencies:
   flutter_test:

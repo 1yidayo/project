@@ -5,23 +5,27 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from openai import OpenAI
 from dotenv import load_dotenv
 import sys
 import traceback 
 from collections import deque 
+import uuid
 
 # 1. 載入環境變數 (讀取 .env)
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 
 # -----------------------------
 # 2. 設定與初始化
 # -----------------------------
 PROJECT_DIR = os.getcwd()
 MODEL_PATH = os.path.join(PROJECT_DIR, "models", "test_best_.pth")
+VIDEO_STORAGE_DIR = os.path.join(PROJECT_DIR, "static", "videos")
+os.makedirs(VIDEO_STORAGE_DIR, exist_ok=True)
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # 新的 (OpenAI)
@@ -30,6 +34,7 @@ client = None
 
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
+    print(f"🔑 目前系統讀到的 Key 前五碼: {OPENAI_API_KEY[:10]}...")
     print("✅ OpenAI Client 設定成功")
 else:
     print("❌ 錯誤：找不到 OPENAI_API_KEY，請檢查 .env 檔案")
@@ -83,6 +88,48 @@ transform = transforms.Compose([
 ])
 
 # -----------------------------
+# Route: 存取影片 (支援 Range Request，Android 需要)
+# -----------------------------
+@app.route('/static/videos/<path:filename>')
+def serve_video(filename):
+    video_path = os.path.join(VIDEO_STORAGE_DIR, filename)
+    
+    if not os.path.exists(video_path):
+        return "Video not found", 404
+    
+    file_size = os.path.getsize(video_path)
+    
+    # 檢查是否有 Range 請求 (Android 影片播放器需要)
+    range_header = request.headers.get('Range', None)
+    
+    if range_header:
+        # 解析 Range header，例如: "bytes=0-999"
+        byte_range = range_header.replace('bytes=', '').split('-')
+        start = int(byte_range[0]) if byte_range[0] else 0
+        end = int(byte_range[1]) if byte_range[1] else file_size - 1
+        
+        length = end - start + 1
+        
+        with open(video_path, 'rb') as f:
+            f.seek(start)
+            data = f.read(length)
+        
+        # 返回 206 Partial Content
+        response = app.response_class(
+            data,
+            status=206,
+            mimetype='video/mp4',
+            direct_passthrough=True
+        )
+        response.headers.add('Content-Range', f'bytes {start}-{end}/{file_size}')
+        response.headers.add('Accept-Ranges', 'bytes')
+        response.headers.add('Content-Length', str(length))
+        return response
+    else:
+        # 完整檔案請求
+        return send_from_directory(VIDEO_STORAGE_DIR, filename, mimetype='video/mp4')
+
+# -----------------------------
 # 3. 處理影片 API (暴力全角度搜尋版)
 # -----------------------------
 @app.route('/analyze', methods=['POST'])
@@ -93,9 +140,25 @@ def analyze_video():
             return jsonify({"error": "No video file provided"}), 400
         
         video_file = request.files['video']
-        save_path = os.path.join(PROJECT_DIR, "temp_upload.mp4")
+        
+        # ★ 新增：檢查是否需要儲存影片
+        save_video_flag = request.form.get('save_video', 'true').lower() == 'true'
+        
+        # 不管是否儲存，都要先存一個暫存檔來做分析
+        raw_filename = f"{uuid.uuid4()}.mp4"
+        save_path = os.path.join(VIDEO_STORAGE_DIR, raw_filename)
         video_file.save(save_path)
-        print("📥 收到影片，開始分析...")
+        
+        # 根據設定決定是否產生影片網址
+        if save_video_flag:
+            # 需要儲存：產生可供外部存取的 URL
+            video_url = f"http://10.0.2.2:5000/static/videos/{raw_filename}"
+            print(f"📥 收到影片，已存檔至: {save_path}")
+            print(f"🔗 影片網址: {video_url}")
+        else:
+            # 不需要儲存：分析完後會刪除，不回傳 URL
+            video_url = None
+            print(f"📥 收到影片 (暫存分析用，不永久儲存): {save_path}")
 
         # 2. 第二步：影片存好了，才能宣告 cap (打開影片)
         cap = cv2.VideoCapture(save_path)
@@ -107,7 +170,7 @@ def analyze_video():
         timeline_data = [] 
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps == 0 or fps is None: fps = 30
-        frame_interval = int(fps) # 用來做時間軸記錄
+        frame_interval = max(1, int(fps / 3))  # ★ 改成每秒 3 個資料點，曲線更平滑動態
 
         # 初始化其他變數
         session_history = []
@@ -254,43 +317,40 @@ def analyze_video():
             "suggestion": ""
         }
         
+        
         try:
             # ★★★ 設定模型：使用穩定版 1.5-flash ★★★
-            model_name = 'gpt-4o'
+            model_name = 'gpt-4o-mini'
             
-            # 這是你要求的完整 Prompt，完全保留
             prompt = f"""
-            你是一位專業的大學入學面試教練。你剛剛觀察了一位高中生的模擬面試表現。
-            以下是透過 AI 微表情分析系統偵測到的情緒數據（整場面試的平均佔比）：
+            你是一位頂尖的大學入學面試培訓專家，同時也是一位專業的表達溝通教練。
+            你正在一對一指導一位高中生，幫助他在升學面試中脫穎而出。
 
-            【情緒數據】
-            - Confidence (自信): {final_scores_float.get('confidence', 0):.1f}%
-            - Passion (熱忱): {final_scores_float.get('passion', 0):.1f}%
-            - Relaxed (沈穩/基準線): {final_scores_float.get('relaxed', 0):.1f}%
-            - Nervous (緊張/焦慮): {final_scores_float.get('nervous', 0):.1f}%
+            【AI 表情分析結果】（本次模擬面試的平均情緒佔比）
+            - 自信指數: {final_scores_float.get('confidence', 0):.0f}%
+            - 熱忱指數: {final_scores_float.get('passion', 0):.0f}%
+            - 放鬆指數: {final_scores_float.get('relaxed', 0):.0f}%
+            - 緊張指數: {final_scores_float.get('nervous', 0):.0f}%
 
-            【情緒定義參考】
-            1. Confidence: 眼神堅定、有自信。
-            2. Passion: 談論興趣時展現的熱情。
-            3. Relaxed: 專注聆聽或情緒平穩（基準線）。
-            4. Nervous: 焦慮、僵硬或不自然。
+            【你的任務】
+            請直接對這位學生說話（用「你」稱呼），給他一份**超級實用**的回饋。
 
-            【任務】
-            請根據以上數據，直接對著這位考生（使用「你」來稱呼），生成一份簡短有力的「面試表現分析報告」。
-            請包含以下三個部分：
-            1. **整體表現評分**：根據自信與熱忱的比例，給「你」一句總評。
-            2. **數據洞察**：告訴「你」這些數據代表什麼意義（例如：你的緊張指數偏高，代表...）。
-            3. **具體建議**：針對「你」最弱的部分，給出一個具體的改進行動。
+            🚫 禁止事項（非常重要！）：
+            - 不要只是重複說「你的自信指數是 XX%」這種廢話
+            - 不要說「你展現了沈穩的一面」「情緒波動不大」這種沒營養的話
+            - 不要泛泛地說「多練習就會進步」
 
-            請用繁體中文回答，語氣要像一位資深但親切的教授在面對面指導學生。
+            ✅ 必須做到：
+            - 給出**具體到可以今天就執行**的建議（例如：練習時對著鏡子微笑、回答前先深呼吸 3 秒）
+            - 針對**面試技巧**給建議（眼神接觸、手勢運用、語速控制、開場白設計）
+            - 像一個真正關心學生的教練那樣說話，有溫度但直接
 
-            ⚠️【重要技術格式要求】⚠️
-            因為我是透過 API 呼叫你，為了讓我的系統能讀取，請你 **務必** 只回傳一個 JSON 格式的字串，不要有任何 Markdown 標記 (如 ```json)。
-            JSON 格式如下（請嚴格遵守此格式）：
+            【輸出格式】
+            請只回傳一個 JSON，不要有任何 Markdown 標記：
             {{
-                "overall_score": (0-100 整數總分，請根據表現給分),
-                "comment": (將上面的「整體表現評分」與「數據洞察」合併成一段 50-100 字的溫暖中文短評),
-                "suggestion": (將上面的「具體建議」濃縮成一句具體行動)
+                "overall_score": (0-100 整數，根據自信+熱忱的表現給分，緊張高要扣分),
+                "comment": (50-80 字的短評，告訴學生他這次表現的亮點和需要改進的地方，要具體、有溫度，不要廢話),
+                "suggestion": (一句話的具體行動建議，例如「下次回答問題前，先對面試官微笑並點頭，再開始說話」)
             }}
             """
 
@@ -361,15 +421,139 @@ def analyze_video():
             }
             print(f"✅ 已啟用救援評語 (分數: {calc_score})")
 
+        # ★ 新增：如果不需要儲存影片，分析完就刪掉暫存檔
+        if not save_video_flag:
+            try:
+                os.remove(save_path)
+                print(f"🗑️ 已刪除暫存影片: {save_path}")
+            except Exception as del_err:
+                print(f"⚠️ 刪除暫存影片失敗: {del_err}")
+
         return jsonify({
             "emotions": final_scores_int,
             "timeline": timeline_data,
-            "ai_analysis": feedback_json
+            "ai_analysis": feedback_json,
+            "video_url": video_url # ★ 如果不儲存，這裡會是 None
         })
     except Exception as e:
         print(f"❌ 伺服器發生嚴重錯誤: {e}")
         traceback.print_exc()
         return jsonify({"error": f"Server Error: {str(e)}"}), 500
+
+# -----------------------------
+# 4. 學習歷程 PDF 分析 API
+# -----------------------------
+@app.route('/analyze_portfolio', methods=['POST'])
+def analyze_portfolio():
+    try:
+        # 1. 檢查是否有上傳檔案
+        if 'pdf' not in request.files:
+            return jsonify({"error": "No PDF file provided"}), 400
+        
+        pdf_file = request.files['pdf']
+        
+        if pdf_file.filename == '':
+            return jsonify({"error": "Empty filename"}), 400
+        
+        # 2. 儲存 PDF 到暫存目錄
+        pdf_filename = f"{uuid.uuid4()}.pdf"
+        pdf_path = os.path.join(PROJECT_DIR, "static", pdf_filename)
+        pdf_file.save(pdf_path)
+        print(f"📄 收到 PDF: {pdf_file.filename}")
+        
+        # 3. 提取 PDF 文字內容
+        try:
+            import pdfplumber
+            text_content = ""
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+            
+            print(f"📖 提取到 {len(text_content)} 字")
+            
+            if len(text_content.strip()) < 50:
+                # 內容太少，可能是掃描檔或圖片 PDF
+                os.remove(pdf_path)
+                return jsonify({
+                    "error": "PDF 內容過少或為純圖片格式，無法分析。請上傳包含文字的 PDF。"
+                }), 400
+            
+        except Exception as pdf_err:
+            os.remove(pdf_path)
+            print(f"❌ PDF 解析失敗: {pdf_err}")
+            return jsonify({"error": f"PDF 解析失敗: {str(pdf_err)}。請確認已安裝 pdfplumber (pip install pdfplumber)"}), 500
+        
+        # 4. 呼叫 OpenAI 分析
+        if not client:
+            os.remove(pdf_path)
+            return jsonify({"error": "OpenAI API 未設定"}), 500
+        
+        # 限制文字長度，避免 Token 超過限制
+        max_chars = 10000
+        if len(text_content) > max_chars:
+            text_content = text_content[:max_chars] + "\n...(內容過長，已截斷)"
+        
+        prompt = f"""
+        你是一位專業的高中升大學輔導專家，同時也是教育部「學習歷程檔案」的審閱委員。
+        你正在審閱一位高中生的學習歷程檔案，請給予專業的評價和具體的改進建議。
+
+        【學習歷程內容】
+        {text_content}
+
+        【請依照以下格式給予評價】
+        請只回傳一個 JSON，不要有任何 Markdown 標記：
+        {{
+            "overall_score": (0-100 整數，根據內容完整性、個人特色、反思深度給分),
+            "strengths": [
+                "優點1",
+                "優點2",
+                "優點3"
+            ],
+            "weaknesses": [
+                "需改進1",
+                "需改進2"
+            ],
+            "comment": (100-150字的整體評語，指出這份學習歷程的亮點和可以加強的地方，要具體、有建設性),
+            "suggestions": [
+                "具體改進建議1（例如：可以補充實作過程中遇到的困難和解決方法）",
+                "具體改進建議2",
+                "具體改進建議3"
+            ]
+        }}
+        """
+        
+        print("🤖 正在呼叫 OpenAI 分析學習歷程...")
+        
+        response = client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        
+        content = response.choices[0].message.content
+        clean_text = content.replace('```json', '').replace('```', '').strip()
+        
+        import json
+        result_json = json.loads(clean_text)
+        print(f"✅ 學習歷程分析完成！分數: {result_json.get('overall_score', 'N/A')}")
+        
+        # 5. 刪除暫存 PDF
+        os.remove(pdf_path)
+        
+        return jsonify({
+            "success": True,
+            "analysis": result_json
+        })
+        
+    except Exception as e:
+        print(f"❌ 學習歷程分析失敗: {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"分析失敗: {str(e)}"}), 500
 
 if __name__ == '__main__':
     # 允許區網連線

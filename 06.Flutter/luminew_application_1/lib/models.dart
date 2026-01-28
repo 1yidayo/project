@@ -1,4 +1,5 @@
 // fileName: lib/models.dart
+import 'dart:convert';
 
 class AppUser {
   final String id;
@@ -42,9 +43,9 @@ class Class {
   factory Class.fromMap(Map<String, dynamic> map) {
     return Class(
       id: map['ClassID'].toString(),
-      name: map['ClassName'],
+      name: map['ClassName']?.toString() ?? '',
       teacherId: map['TeacherID'].toString(),
-      invitationCode: map['InvitationCode'],
+      invitationCode: map['InvitationCode']?.toString() ?? '',
     );
   }
 }
@@ -77,6 +78,7 @@ class InterviewRecord {
   final String aiComment;
   final String aiSuggestion;
   final String timelineData;
+  final String? videoUrl; // ★ 新增：影片網址
 
   InterviewRecord({
     required this.id,
@@ -92,6 +94,7 @@ class InterviewRecord {
     this.studentName = '',
     this.aiComment = '',
     this.aiSuggestion = '',
+    this.videoUrl, // ★ 新增
   });
 
   int get overallScore => scores['overall'] ?? 0;
@@ -111,16 +114,39 @@ class InterviewRecord {
       aiComment: map['AIComment'] ?? '',
       aiSuggestion: map['AISuggestion'] ?? '',
       timelineData: map['TimelineData'] ?? '[]',
+      videoUrl: map['VideoUrl'], // ★ 新增
     );
   }
 
   static Map<String, int> _parseScores(dynamic jsonStr) {
-    try {
-      // 簡單處理 JSON 解析
-      return {'overall': 0};
-    } catch (e) {
-      return {'overall': 0};
+    if (jsonStr == null) return {};
+    if (jsonStr is Map) {
+      return Map<String, int>.from(jsonStr.map((k, v) => MapEntry(k, v is int ? v : int.tryParse(v.toString()) ?? 0)));
     }
+    if (jsonStr is String) {
+      if (jsonStr.isEmpty) return {};
+      // ★ 修正：如果接到的字串是用單引號包的 (因為 SQL REPLACE 過)，先換回雙引
+      String cleanJson = jsonStr.replaceAll("'", '"');
+      
+      try {
+        final decoded = jsonDecode(cleanJson); // 現在應該是標準 JSON 了
+        if (decoded is Map) {
+           return Map<String, int>.from(decoded.map((k, v) => MapEntry(k, v is int ? v : int.tryParse(v.toString()) ?? 0)));
+        }
+        // 如果還是兩層編碼 (有時候會發生)，再解一次
+        if (decoded is String) {
+           final decoded2 = jsonDecode(decoded);
+           if (decoded2 is Map) {
+             return Map<String, int>.from(decoded2.map((k, v) => MapEntry(k, v is int ? v : int.tryParse(v.toString()) ?? 0)));
+           }
+        }
+      } catch (e) {
+        // 如果真的還是壞掉，回傳預設值讓 App 不會當掉
+        print("⚠️ 解析分數失敗 (字串: $jsonStr): $e");
+        return {'overall': 0};
+      }
+    }
+    return {};
   }
 }
 

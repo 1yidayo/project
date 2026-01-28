@@ -172,26 +172,42 @@ class _TeacherClassScreenState extends State<TeacherClassScreen> {
           ElevatedButton(
             onPressed: () async {
               if (c.text.isEmpty) return;
+              
+              // 1. 先關閉對話框
               Navigator.pop(ctx);
+              
+              // 2. 顯示轉圈圈
               setState(() => _isLoading = true);
+              
               try {
+                // 3. 請求資料庫建立 (這裡會呼叫 sql_service.dart 去 INSERT Classes)
                 await SqlService.createClass(c.text, widget.user.email);
-                if (mounted)
+
+                // 4. ★★★ 關鍵：等待 0.5 秒讓資料庫寫入完成 ★★★
+                await Future.delayed(const Duration(milliseconds: 500));
+
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text("✅ 建立成功！"),
                       backgroundColor: Colors.green,
                     ),
                   );
+                }
+                
+                // 5. 重新讀取 (這時候資料庫已經有資料了，所以列表會出現)
                 await _load();
+
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text("❌ 錯誤: $e"),
                       backgroundColor: Colors.red,
                     ),
                   );
+                }
+                // 失敗也要把轉圈圈關掉
                 setState(() => _isLoading = false);
               }
             },
