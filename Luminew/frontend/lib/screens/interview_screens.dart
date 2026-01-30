@@ -3,11 +3,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart'; // 確保 pubspec.yaml 有 camera
-import 'package:http/http.dart' as http; // 確保 pubspec.yaml 有 http
+import 'package:http/http.dart' as http; // 確保 pubspec.yaml 有 h
 import '../models.dart';
 import '../mock_data.dart';
 import '../sql_service.dart'; // 必須引用，用於存檔與讀取留言
 import 'package:fl_chart/fl_chart.dart';
+import 'package:video_player/video_player.dart'; // ★ 新增引用
+import 'dart:io';
+import 'package:video_player/video_player.dart'; // ★ 新增引用
+import 'dart:io';
 
 // 全域變數：用來儲存可用的相機列表
 List<CameraDescription> cameras = [];
@@ -37,10 +41,40 @@ class _InterviewRecordListScreenState extends State<InterviewRecordListScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // 容錯：如果 SQL 沒資料或出錯，回退顯示 Mock 資料 (避免畫面全白)
-          final records = (snapshot.data == null || snapshot.data!.isEmpty)
-              ? mockService.getRecords(widget.user.email)
-              : snapshot.data!;
+          // ★ 修改：如果有錯誤，直接顯示錯誤並提供重試，而不是偷偷換假資料
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.cloud_off, size: 80, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "無法連線到資料庫",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      "${snapshot.error}",
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // 重新觸發 build -> 重新執行 future
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("重試連線"),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final records = snapshot.data ?? [];
 
           if (records.isEmpty) {
             return const Center(child: Text('尚無紀錄'));
@@ -53,18 +87,66 @@ class _InterviewRecordListScreenState extends State<InterviewRecordListScreen> {
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.indigo,
-                    child: Text(
-                      "${r.overallScore}",
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                  leading: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: r.overallScore < 61
+                            ? [Colors.red.shade700, Colors.redAccent]
+                            : r.overallScore <= 80
+                                ? [Colors.green.shade700, Colors.greenAccent]
+                                : [Colors.indigo, Colors.blueAccent],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        "${r.overallScore}",
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                   title: Text('${r.type} (${r.language})'),
                   subtitle: Text(
                     '${r.date.toString().split(' ')[0]} | ${r.interviewer}',
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  // ★ 修改：trailing 改成 Row（刪除按鈕 + 箭頭）
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () async {
+                          // 顯示確認對話框
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('確認刪除'),
+                              content: const Text('確定要刪除這筆面試紀錄嗎？此操作無法復原。'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('取消'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('刪除', style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await SqlService.deleteRecord(r.id);
+                            setState(() {}); // 刷新列表
+                          }
+                        },
+                      ),
+                      const Icon(Icons.arrow_forward_ios, size: 16),
+                    ],
+                  ),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -320,6 +402,8 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
       );
 
       request.files.add(await http.MultipartFile.fromPath('video', file.path));
+      // ★ 新增：傳送「是否儲存影片」的設定給後端
+      request.fields['save_video'] = widget.saveVideo ? 'true' : 'false';
 
       print("正在上傳影片...");
       var streamedResponse = await request.send().timeout(
@@ -356,7 +440,8 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
           privacy: 'Private',
           aiComment: ai['comment'] ?? '',
           aiSuggestion: ai['suggestion'] ?? '',
-          timelineData: jsonEncode(timelineList)
+          timelineData: jsonEncode(timelineList),
+          videoUrl: data['video_url'], // ★ 新增：把影片網址存進紀錄
         );
 
         // 1. 存入 Mock (即時顯示用)
@@ -380,6 +465,7 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
                 user: widget.user,
                 aiComment: ai['comment'],
                 aiSuggestion: ai['suggestion'],
+                videoUrl: data['video_url'], // ★ 新增：傳入影片網址
               ),
             ),
           );
@@ -542,6 +628,7 @@ class InterviewResultScreen extends StatefulWidget {
   final AppUser user;
   final String? aiComment;
   final String? aiSuggestion;
+  final String? videoUrl; // ★ 新增
 
   const InterviewResultScreen({
     super.key,
@@ -549,6 +636,7 @@ class InterviewResultScreen extends StatefulWidget {
     required this.user,
     this.aiComment,
     this.aiSuggestion,
+    this.videoUrl, // ★ 新增
   });
 
   @override
@@ -558,6 +646,9 @@ class InterviewResultScreen extends StatefulWidget {
 class _InterviewResultScreenState extends State<InterviewResultScreen> {
   final _commentCtrl = TextEditingController();
   List<Comment> _comments = [];
+  VideoPlayerController? _videoController; // ★ 新增控制器
+  bool _isVideoInitialized = false;
+  Duration _videoPosition = Duration.zero; // ★ 追蹤影片當前播放位置
 
   bool _isIndexMode = false;
 
@@ -579,6 +670,72 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
   void initState() {
     super.initState();
     _loadComments();
+    _initVideo(); // ★ 初始化影片
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose(); // ★ 釋放資源
+    _commentCtrl.dispose();
+    super.dispose();
+  }
+
+  // 初始化影片播放器
+  bool _videoLoadFailed = false; // ★ 新增：記錄影片是否載入失敗
+  
+  Future<void> _initVideo() async {
+    // 優先使用傳入的 videoUrl (如果是剛錄完)，其次使用 record.videoUrl (如果是從歷史紀錄進來)
+    String? url = widget.videoUrl ?? widget.record.videoUrl;
+    
+    print("🎬 [DEBUG] widget.videoUrl = ${widget.videoUrl}");
+    print("🎬 [DEBUG] widget.record.videoUrl = ${widget.record.videoUrl}");
+    print("🎬 [DEBUG] 最終使用的 URL = $url");
+    
+    if (url != null && url.isNotEmpty && url != 'null') {
+      print("🎬 嘗試載入影片: $url");
+      
+      if (url.startsWith('http')) {
+        _videoController = VideoPlayerController.networkUrl(Uri.parse(url));
+      } else {
+        _videoController = VideoPlayerController.file(File(url));
+      }
+
+      try {
+        print("🎬 開始初始化影片播放器...");
+        await _videoController!.initialize().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw Exception('影片載入逾時 (超過15秒)');
+          },
+        );
+        print("✅ 影片初始化成功！");
+        
+        // ★ 加入監聽器：追蹤影片播放位置
+        _videoController!.addListener(() {
+          if (mounted && _videoController != null) {
+            setState(() {
+              _videoPosition = _videoController!.value.position;
+            });
+          }
+        });
+        
+        if (mounted) {
+          setState(() {
+            _isVideoInitialized = true;
+          });
+        }
+      } catch (e) {
+        print("❌ 影片載入失敗: $e");
+        print("   影片網址: $url");
+        if (mounted) {
+          setState(() {
+            _videoLoadFailed = true;
+          });
+        }
+      }
+    } else {
+      print("🎬 [DEBUG] 無影片 URL，不載入影片");
+    }
   }
 
   // 讀取留言 (從 SQL)
@@ -597,7 +754,7 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
     try {
       await SqlService.sendComment(
         widget.record.id,
-        widget.user.id,
+        widget.user.email,  // ★ 修正：要傳 email，不是 id
         _commentCtrl.text,
       );
       _commentCtrl.clear();
@@ -652,13 +809,12 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
             // ------------------------------------
             // Tab 1: AI 分析報告 (顯示圖表與評語)
             // ------------------------------------
-            // ------------------------------------
-            // Tab 1: AI 分析報告 (顯示圖表與評語)
-            // ------------------------------------
             SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+
+                  // 原本的總分卡片
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -800,12 +956,119 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
                     _buildPercentageBars(), // 呼叫長條圖
                     
                     const SizedBox(height: 30),
+                    
+                    // ==========================================
+                    // ★ 面試影片區塊 ★
+                    // ==========================================
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("面試影片回放", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_isVideoInitialized && _videoController != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black26, blurRadius: 10)
+                          ],
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: Column(
+                          children: [
+                            AspectRatio(
+                              aspectRatio: 9 / 16, // ★ 固定 4:3 比例
+                              child: VideoPlayer(_videoController!),
+                            ),
+                            VideoProgressIndicator(
+                              _videoController!, 
+                              allowScrubbing: true,
+                              colors: const VideoProgressColors(
+                                playedColor: Colors.red,
+                              ),
+                            ),
+                            // 播放控制列
+                            Container(
+                              color: Colors.black,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  IconButton(
+                                    icon: Icon(
+                                      _videoController!.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                                      color: Colors.white,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _videoController!.value.isPlaying
+                                            ? _videoController!.pause()
+                                            : _videoController!.play();
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (widget.record.videoUrl != null && widget.record.videoUrl != 'null')
+                      // 有網址但載入失敗或載入中
+                      _videoLoadFailed
+                          ? Container(
+                              margin: const EdgeInsets.only(bottom: 20),
+                              padding: const EdgeInsets.all(30),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.grey[300]!),
+                              ),
+                              child: const Column(
+                                children: [
+                                  Icon(Icons.videocam_off, size: 48, color: Colors.grey),
+                                  SizedBox(height: 8),
+                                  Text('影片載入失敗', style: TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            )
+                          : Container(
+                              margin: const EdgeInsets.only(bottom: 20),
+                              padding: const EdgeInsets.all(30),
+                              child: const CircularProgressIndicator(),
+                            )
+                    else
+                      // 沒有儲存影片
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        padding: const EdgeInsets.all(30),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: const Column(
+                          children: [
+                            Icon(Icons.videocam_off, size: 48, color: Colors.grey),
+                            SizedBox(height: 8),
+                            Text('未儲存影片', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                            SizedBox(height: 4),
+                            Text('可在面試設定中開啟「儲存錄影」功能', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    
+                    const SizedBox(height: 20),
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text("情緒波動曲線", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(height: 10),
                     _buildTimelineChart(), // 呼叫曲線圖
+                    
+                    // ★★★ 新增：影片同步進度條 ★★★
+                    if (_isVideoInitialized && _videoController != null)
+                      _buildVideoSyncProgress(),
                   ] else ...[
                     // === 模式 B: 索引型 ===
                     const Align(
@@ -1131,118 +1394,316 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
     );
   }
 
-  // 4. 曲線圖 (已修正：移除所有會報錯的 const)
-  // 4. 曲線圖 (移除觸摸提示版)
-  Widget _buildTimelineChart() {
-    List<dynamic> timeline = [];
+  // ★★★ 新增：影片同步進度條 ★★★
+  Widget _buildVideoSyncProgress() {
+    // 取得時間軸最大秒數
+    double maxSeconds = 10;
     try {
-      timeline = jsonDecode(widget.record.timelineData);
-    } catch (_) {
-      return const SizedBox();
-    }
+      String rawData = widget.record.timelineData ?? '';
+      if (rawData.isNotEmpty) {
+        List<dynamic> timeline;
+        try {
+          timeline = jsonDecode(rawData);
+        } catch (_) {
+          String cleanJson = rawData.replaceAll("'", '"');
+          if (!cleanJson.startsWith('[')) cleanJson = '[$cleanJson]';
+          timeline = jsonDecode(cleanJson);
+        }
+        if (timeline.isNotEmpty) {
+          maxSeconds = (timeline.last['t'] as num).toDouble();
+        }
+      }
+    } catch (_) {}
     
-    if (timeline.isEmpty) return const Center(child: Text("無時間軸數據"));
-
-    // 計算最大秒數，用來設定 X 軸範圍
-    double maxSeconds = 0;
-    if (timeline.isNotEmpty) {
-      maxSeconds = (timeline.last['t'] as num).toDouble();
-    }
-
+    if (maxSeconds == 0) maxSeconds = 10;
+    
+    // 計算當前進度比例
+    double currentSeconds = _videoPosition.inMilliseconds / 1000.0;
+    double progress = (currentSeconds / maxSeconds).clamp(0.0, 1.0);
+    
     return Container(
-      height: 250,
-      padding: const EdgeInsets.only(right: 24, left: 12, top: 24, bottom: 12),
-      child: LineChart(
-        LineChartData(
-          minY: 0,
-          maxY: 100,
-          minX: 0,
-          maxX: maxSeconds > 0 ? maxSeconds : 10, // 動態設定 X 軸長度
-          
-          // 1. 網格設定
-          gridData: FlGridData(
-            show: true, 
-            verticalInterval: 1, // 每 1 秒一條垂直線
-            horizontalInterval: 20, // 每 20 分一條水平線
-            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
-            getDrawingVerticalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
-          ),
-
-          // 2. 標題與刻度
-          titlesData: FlTitlesData(
-            // 下方 X 軸 (時間)
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1, // 每 1 秒顯示一次刻度
-                reservedSize: 30,
-                getTitlesWidget: (val, meta) {
-                  if (val % 1 != 0) return const SizedBox.shrink(); 
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      "${val.toInt()}s", 
-                      style: const TextStyle(fontSize: 10, color: Colors.grey)
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      padding: const EdgeInsets.only(left: 40, right: 24), // 對齊曲線圖
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 進度條
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 背景條
+              Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              // 已播放進度
+              FractionallySizedBox(
+                widthFactor: progress,
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Colors.red, Colors.orange],
                     ),
-                  );
-                },
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
               ),
-            ),
-            // 左側 Y 軸 (分數 0-100)
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 20,     // 0, 20, 40, 60, 80, 100
-                reservedSize: 40,
-                getTitlesWidget: (val, meta) {
-                  return Text(
-                    "${val.toInt()}", 
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)
-                  );
-                },
+              // 當前位置指示器
+              Positioned(
+                left: 0,
+                right: 0,
+                child: Row(
+                  children: [
+                    SizedBox(width: (MediaQuery.of(context).size.width - 64) * progress - 8),
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black26, blurRadius: 4),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // 上方與右方不顯示
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ],
           ),
-
-          // 3. 邊框
-          borderData: FlBorderData(
-            show: true, 
-            border: Border.all(color: Colors.grey[300]!)
+          const SizedBox(height: 8),
+          // 時間顯示
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${currentSeconds.toStringAsFixed(1)} 秒',
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(Icons.play_circle_outline, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    '影片同步進度',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                  ),
+                ],
+              ),
+              Text(
+                '${maxSeconds.toStringAsFixed(1)} 秒',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ],
           ),
-
-          // 4. 線條數據
-          lineBarsData: [
-            _buildLine(timeline, 'c', Colors.blue),   // 自信
-            _buildLine(timeline, 'p', Colors.red),    // 熱忱
-            _buildLine(timeline, 'n', Colors.orange), // 緊張
-            _buildLine(timeline, 'r', Colors.green),  // 沈穩
-          ],
-          
-          // 這裡原本的第 5 點已移除
-        ),
+        ],
       ),
     );
   }
 
+  // fileName: lib/screens/interview_screens.dart
+
+  // ==========================================
+  // 1. 這是上面的函式：_buildTimelineChart (負責畫圖框)
+  // ==========================================
+  Widget _buildTimelineChart() {
+    List<dynamic> timeline = [];
+    try {
+      String rawData = widget.record.timelineData;
+      print("📊 解析 TimelineData: ${rawData.length > 100 ? rawData.substring(0, 100) + '...' : rawData}");
+      
+      // 嘗試直接解析 (原始 JSON 格式)
+      try {
+        timeline = jsonDecode(rawData);
+      } catch (_) {
+        // 如果失敗，嘗試把單引號換成雙引號 (舊格式相容)
+        String cleanJson = rawData.replaceAll("'", '"');
+        
+        // ★ 修正：如果數據缺少陣列括號，加上它
+        if (!cleanJson.startsWith('[')) {
+          cleanJson = '[$cleanJson]';
+        }
+        
+        timeline = jsonDecode(cleanJson);
+      }
+    } catch (e) {
+      print("⚠️ 解析 timelineData 失敗: $e");
+      print("   原始數據: ${widget.record.timelineData}");
+      return const Center(child: Text("無法解析時間軸數據"));
+    }
+    
+    if (timeline.isEmpty) return const Center(child: Text("無時間軸數據"));
+
+    double maxSeconds = 0;
+    if (timeline.isNotEmpty) {
+      maxSeconds = (timeline.last['t'] as num).toDouble();
+    }
+    // 防呆
+    if (maxSeconds == 0) maxSeconds = 10;
+    
+    // 計算間隔 (維持您原本喜歡的 "只切中間和後面" 風格)
+    double interval = maxSeconds / 2;
+
+    return Container(
+      height: 250,
+      // ★★★ 修正點：調整 Padding，讓左邊貼齊一點 ★★★
+      padding: const EdgeInsets.only(right: 24, left: 0, top: 24, bottom: 12),
+      child: LineChart(
+        LineChartData(
+          // ★★★ 需求 4：X 軸從 0 開始，完全貼齊 Y 軸 ★★★
+          minX: 0, 
+          maxX: maxSeconds,
+          minY: 0,
+          maxY: 100,
+
+          // ★★★ 點擊曲線跳轉影片功能 ★★★
+          lineTouchData: LineTouchData(
+            enabled: true,
+            // 點擊事件：跳轉到影片對應時間點
+            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+              // 只在點擊放開時觸發 (避免重複)
+              if (event is FlTapUpEvent) {
+                if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
+                  final spot = touchResponse.lineBarSpots!.first;
+                  final timestamp = spot.x; // 取得圖表上的秒數
+                  
+                  // 如果影片有初始化，就跳轉
+                  if (_isVideoInitialized && _videoController != null) {
+                    _videoController!.seekTo(Duration(milliseconds: (timestamp * 1000).toInt()));
+                    _videoController!.play(); // 跳轉後自動播放
+                    
+                    // 顯示提示
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('跳轉到 ${timestamp.toStringAsFixed(1)} 秒'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  } else {
+                    // 如果沒有影片，顯示提示
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('此紀錄未儲存影片，無法跳轉播放'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            touchTooltipData: LineTouchTooltipData(
+              // 提示框背景色
+              getTooltipColor: (spot) => Colors.blueGrey.withOpacity(0.8),
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  // 顯示時間和數值
+                  return LineTooltipItem(
+                    "${spot.x.toStringAsFixed(1)}秒\n${spot.y.toInt()}%",
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  );
+                }).toList();
+              },
+            ),
+            // 顯示觸碰指示線
+            getTouchedSpotIndicator: (barData, spotIndexes) {
+              return spotIndexes.map((index) {
+                return TouchedSpotIndicatorData(
+                  FlLine(color: Colors.red, strokeWidth: 2, dashArray: [5, 5]),
+                  FlDotData(show: true, getDotPainter: (spot, percent, barData, index) {
+                    return FlDotCirclePainter(
+                      radius: 6,
+                      color: Colors.red,
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  }),
+                );
+              }).toList();
+            },
+          ),
+          
+          // 網格設定
+          gridData: FlGridData(
+            show: true, 
+            verticalInterval: interval, 
+            horizontalInterval: 20, 
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+            getDrawingVerticalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+          ),
+
+          // 標題設定
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              axisNameWidget: const Align(
+                alignment: Alignment.centerRight,
+                child: Text("單位: 秒", style: TextStyle(fontSize: 10, color: Colors.grey)),
+              ),
+              axisNameSize: 20,
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: interval,
+                reservedSize: 30,
+                getTitlesWidget: (val, meta) {
+                  // 隱藏 0，只顯示中間和最後
+                  if (val == 0) return const SizedBox.shrink();
+                  
+                  // 避免太靠近右邊界被切掉
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text("${val.toInt()}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 20,
+                reservedSize: 40,
+                getTitlesWidget: (val, meta) => Text("${val.toInt()}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          
+          borderData: FlBorderData(show: true, border: Border.all(color: Colors.grey[300]!)),
+          
+          lineBarsData: [
+            _buildLine(timeline, 'c', Colors.blue),
+            _buildLine(timeline, 'p', Colors.red),
+            _buildLine(timeline, 'n', Colors.orange),
+            _buildLine(timeline, 'r', Colors.green),
+          ],
+        ),
+      ),
+    );
+  } 
+
+  // ==========================================
+  // 2. 這是下面的函式：_buildLine
+  // ==========================================
   LineChartBarData _buildLine(List<dynamic> data, String key, Color color) {
     return LineChartBarData(
       spots: data.map((e) => FlSpot((e['t'] as num).toDouble(), (e[key] as num).toDouble())).toList(),
       isCurved: true, 
+      preventCurveOverShooting: true, // 防止爆框
       color: color,
       barWidth: 3, 
       isStrokeCapRound: true,
-      // 顯示資料點
-      dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) {
-        return FlDotCirclePainter(
-          radius: 2,
-          color: Colors.white,
-          strokeWidth: 2,
-          strokeColor: color,
-        );
-      }),
+      
+      // ★★★ 需求 3：移除所有圓點 (show: false) ★★★
+      dotData: FlDotData(show: false),
+      
       belowBarData: BarAreaData(show: false),
     );
   }
