@@ -1,12 +1,20 @@
 from fastapi import FastAPI
-from app.api import stt, llm, tts
+from fastapi.staticfiles import StaticFiles
+from app.api import stt, llm, tts, emotion
+import os
 
 app = FastAPI(title="Luminew")
+
+# 設定靜態檔案目錄 (影片存取用)
+static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+os.makedirs(os.path.join(static_dir, "videos"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # 加入路由
 app.include_router(stt.router, prefix="/stt", tags=["ASR"])
 app.include_router(llm.router, prefix="/llm", tags=["LLM"])
 app.include_router(tts.router, prefix="/tts", tags=["TTS"])
+app.include_router(emotion.router, prefix="/emotion", tags=["Emotion"])
 
 @app.get("/")
 def root():

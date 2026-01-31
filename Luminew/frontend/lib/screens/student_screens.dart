@@ -767,7 +767,7 @@ class _PortfolioAnalysisScreenState extends State<PortfolioAnalysisScreen> {
       // 建立 multipart request
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:5000/analyze_portfolio'),
+        Uri.parse('http://10.0.2.2:8000/emotion/analyze_portfolio'),
       );
 
       request.files.add(http.MultipartFile.fromBytes(

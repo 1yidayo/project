@@ -396,23 +396,29 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
 
     try {
       // ★★★ IP 設定：請確認這裡改成您電腦的 IP ★★★
+      final apiUrl = 'http://10.0.2.2:8000/emotion/analyze';
+      print("★★★ 準備上傳影片到: $apiUrl ★★★");
+      print("★★★ 影片路徑: ${file.path} ★★★");
+      
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:5000/analyze'),
+        Uri.parse(apiUrl),
       );
 
       request.files.add(await http.MultipartFile.fromPath('video', file.path));
       // ★ 新增：傳送「是否儲存影片」的設定給後端
       request.fields['save_video'] = widget.saveVideo ? 'true' : 'false';
 
-      print("正在上傳影片...");
+      print("★★★ 正在上傳影片... ★★★");
       var streamedResponse = await request.send().timeout(
         const Duration(seconds: 300),
         onTimeout: () {
+          print("★★★ 連線逾時！★★★");
           throw Exception("連線逾時，請檢查 Python Server 是否開啟");
         },
       );
 
+      print("★★★ 收到回應，狀態碼: ${streamedResponse.statusCode} ★★★");
       var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {

@@ -7,3 +7,12 @@ numpy            # sounddevice 需要
 pydub            # 處理 mp3 / wav
 python-dotenv    # 讀取 .env（注意不是 dotenv）
 pydantic         # FastAPI 資料驗證（FastAPI 會用到）
+
+# === 情緒分析新增依賴 ===
+torch            # PyTorch 深度學習框架
+torchvision      # 電腦視覺模型
+opencv-python    # 人臉偵測
+Pillow           # 影像處理
+openai           # OpenAI API (AI 評語)
+pdfplumber       # PDF 文字提取
+python-multipart # FastAPI 檔案上傳
