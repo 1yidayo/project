@@ -1,5 +1,5 @@
 # emotion_service.py
-# 情緒分析核心服務 - 從 Flask app.py 遷移到 FastAPI 架構
+# 情緒分析核心服務 - 非同步 + 多線程版本
 
 import os
 import cv2
@@ -7,12 +7,14 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
-from openai import OpenAI
+import httpx
 from dotenv import load_dotenv
 import traceback
 from collections import deque
 import uuid
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # 載入環境變數
 load_dotenv()
@@ -25,16 +27,14 @@ MODEL_PATH = os.path.join(PROJECT_DIR, "models", "test_best_.pth")
 VIDEO_STORAGE_DIR = os.path.join(PROJECT_DIR, "static", "videos")
 os.makedirs(VIDEO_STORAGE_DIR, exist_ok=True)
 
-# OpenAI Client
+# OpenAI API Key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = None
 
 if OPENAI_API_KEY:
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    print(f"🔑 目前系統讀到的 Key 前五碼: {OPENAI_API_KEY[:10]}...")
-    print("✅ OpenAI Client 設定成功")
+    print(f"🔑 OpenAI API Key 前十碼: {OPENAI_API_KEY[:10]}...")
+    print("✅ OpenAI API 設定成功")
 else:
-    print("❌ 錯誤：找不到 OPENAI_API_KEY，請檢查 .env 檔案")
+    print("⚠️ 警告：找不到 OPENAI_API_KEY，AI 評語功能將使用本地評語")
 
 # 載入人臉辨識器
 HAAR_PATH = os.path.join(PROJECT_DIR, "haarcascade_frontalface_default.xml")
@@ -81,24 +81,20 @@ transform = transforms.Compose([
     transforms.Normalize([0.5]*3, [0.5]*3)
 ])
 
+# ★★★ 建立共用的 ThreadPoolExecutor ★★★
+# 最多同時處理 4 個影片任務
+executor = ThreadPoolExecutor(max_workers=4)
+
 
 def get_video_storage_dir():
     """取得影片儲存目錄"""
     return VIDEO_STORAGE_DIR
 
 
-async def analyze_video(video_path: str, save_video: bool = True) -> dict:
-    """
-    分析影片情緒
-    
-    Args:
-        video_path: 影片檔案路徑
-        save_video: 是否保留影片
-        
-    Returns:
-        分析結果 dict
-    """
+def _analyze_video_sync(video_path: str, save_video: bool) -> dict:
+    """同步處理影片的核心邏輯 (在獨立線程中執行)"""
     try:
+        print(f"🎬 [Worker] 開始處理影片: {video_path}")
         cap = cv2.VideoCapture(video_path)
         
         if not cap.isOpened():
@@ -116,7 +112,7 @@ async def analyze_video(video_path: str, save_video: bool = True) -> dict:
         
         orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"🎥 原始影片尺寸: {orig_w} x {orig_h}")
+        print(f"🎥 原始影片尺寸: {orig_w} x {orig_h}, FPS: {fps}")
 
         smooth_queue = deque(maxlen=5)
 
@@ -130,39 +126,32 @@ async def analyze_video(video_path: str, save_video: bool = True) -> dict:
                 if frame_count % 3 != 0:
                     continue
 
+                # 縮小圖片以加快偵測速度
+                h_orig, w_orig = frame.shape[:2]
+                if w_orig > 640:
+                    scale = 640 / w_orig
+                    frame_small = cv2.resize(frame, (640, int(h_orig * scale)))
+                else:
+                    frame_small = frame
+                    
+                gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray, 1.1, 8)
+                
                 found_face_info = None
-                rotation_attempts = [None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]
-                
-                for rot_code in rotation_attempts:
-                    temp_frame = frame.copy()
-                    
-                    if rot_code is not None:
-                        temp_frame = cv2.rotate(temp_frame, rot_code)
-                    
-                    target_w = 480
-                    h_curr, w_curr, _ = temp_frame.shape
-                    scale = target_w / w_curr
-                    new_h = int(h_curr * scale)
-                    temp_frame = cv2.resize(temp_frame, (target_w, new_h))
-                    
-                    gray = cv2.cvtColor(temp_frame, cv2.COLOR_BGR2GRAY)
-                    faces = face_cascade.detectMultiScale(gray, 1.1, 8)
-                    
-                    if len(faces) > 0:
-                        found_face_info = (temp_frame, faces)
-                        break
-                
+                if len(faces) > 0:
+                     if w_orig > 640:
+                        scale_inv = w_orig / 640
+                        faces = [(int(x*scale_inv), int(y*scale_inv), int(w*scale_inv), int(h*scale_inv)) for (x,y,w,h) in faces]
+                        found_face_info = (frame, faces)
+                     else:
+                        found_face_info = (frame, faces)
+
                 if found_face_info is None:
                     continue
 
                 detected_count += 1
                 correct_frame, faces = found_face_info
                 (x, y, w, h) = max(faces, key=lambda f: f[2] * f[3])
-
-                if detected_count <= 3:
-                    debug_frame = correct_frame.copy()
-                    cv2.rectangle(debug_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                    cv2.imwrite(f"debug_face_server_{detected_count}.jpg", debug_frame)
 
                 face_crop = correct_frame[y:y+h, x:x+w]
 
@@ -193,15 +182,14 @@ async def analyze_video(video_path: str, save_video: bool = True) -> dict:
                         }
                         timeline_data.append(timeline_entry)
 
-                except Exception as img_err:
-                    print(f"⚠️ 影像處理錯誤: {img_err}")
+                except Exception:
                     pass
 
         cap.release()
-        print(f"📊 分析完成：共讀取 {frame_count} 幀，成功辨識 {detected_count} 幀人臉。")
+        print(f"📊 [Worker] 分析完成：共 {frame_count} 幀，辨識 {detected_count} 幀")
         
         if not session_history:
-            return {"error": "No face detected (Server tried 3 rotations but failed). Try better lighting."}
+            return {"error": "No face detected. Please fetch camera directly to your face."}
 
         # 計算平均分數
         avg_scores = {cls: 0.0 for cls in CLASSES}
@@ -214,12 +202,9 @@ async def analyze_video(video_path: str, save_video: bool = True) -> dict:
             final_scores_float[cls] = (avg_scores[cls] / len(session_history)) * 100
         
         final_scores_int = {k: int(v) for k, v in final_scores_float.items()}
-        print(f"📈 分析結果: {final_scores_int}")
+        print(f"📈 結果: {final_scores_int}")
 
-        # 生成 AI 評語
-        feedback_json = await generate_ai_feedback(final_scores_float)
-
-        # 處理影片 URL
+        # 處理影片 URL (先回傳，AI 評語稍後處理)
         video_url = None
         if save_video:
             filename = os.path.basename(video_path)
@@ -227,168 +212,168 @@ async def analyze_video(video_path: str, save_video: bool = True) -> dict:
         else:
             try:
                 os.remove(video_path)
-                print(f"🗑️ 已刪除暫存影片: {video_path}")
-            except Exception as del_err:
-                print(f"⚠️ 刪除暫存影片失敗: {del_err}")
+                print(f"🗑️ 已刪除暫存影片")
+            except:
+                pass
 
         return {
             "emotions": final_scores_int,
             "timeline": timeline_data,
-            "ai_analysis": feedback_json,
+            "final_scores_float": final_scores_float,
             "video_url": video_url
         }
 
     except Exception as e:
-        print(f"❌ 伺服器發生嚴重錯誤: {e}")
+        print(f"❌ [Worker] 分析錯誤: {e}")
         traceback.print_exc()
-        return {"error": f"Server Error: {str(e)}"}
+        return {"error": f"Error: {str(e)}"}
 
 
-async def generate_ai_feedback(final_scores_float: dict) -> dict:
-    """生成 AI 評語"""
-    feedback_json = {
-        "overall_score": 0,
-        "comment": "分析完成，正在生成評語...",
-        "suggestion": ""
-    }
-    
-    # ★★★ 暫時跳過 OpenAI，直接使用救援評語（避免伺服器當機）★★★
-    SKIP_OPENAI = True
-    
+def _generate_ai_feedback_sync(final_scores_float: dict) -> dict:
+    """同步生成 AI 評語 (在獨立線程中執行)"""
     try:
-        if SKIP_OPENAI:
-            raise Exception("暫時跳過 OpenAI，使用本地評語")
-            
-        model_name = 'gpt-4o-mini'
+        if not OPENAI_API_KEY:
+            raise Exception("無 API Key")
         
-        prompt = f"""
-        你是一位頂尖的大學入學面試培訓專家，同時也是一位專業的表達溝通教練。
-        你正在一對一指導一位高中生，幫助他在升學面試中脫穎而出。
+        confidence = final_scores_float.get('confidence', 0)
+        passion = final_scores_float.get('passion', 0)
+        relaxed = final_scores_float.get('relaxed', 0)
+        nervous = final_scores_float.get('nervous', 0)
+        
+        # ★★★ 改進版提示詞 ★★★
+        prompt = f"""你是專業的面試培訓教練，正在直接對學生說話。請根據以下面試微表情分析結果，提供詳細且有建設性的評估。
 
-        【AI 表情分析結果】（本次模擬面試的平均情緒佔比）
-        - 自信指數: {final_scores_float.get('confidence', 0):.0f}%
-        - 熱忱指數: {final_scores_float.get('passion', 0):.0f}%
-        - 放鬆指數: {final_scores_float.get('relaxed', 0):.0f}%
-        - 緊張指數: {final_scores_float.get('nervous', 0):.0f}%
+【重要】請使用「你」直接對學生說話，不要用第三人稱。例如：「你的表現很好」而非「學生表現很好」。
 
-        【你的任務】
-        請直接對這位學生說話（用「你」稱呼），給他一份**超級實用**的回饋。
+【情緒數據分析】
+- 自信程度: {confidence:.0f}%
+- 表達熱忱: {passion:.0f}%
+- 放鬆程度: {relaxed:.0f}%
+- 緊張程度: {nervous:.0f}%
 
-        🚫 禁止事項（非常重要！）：
-        - 不要只是重複說「你的自信指數是 XX%」這種廢話
-        - 不要說「你展現了沈穩的一面」「情緒波動不大」這種沒營養的話
-        - 不要泛泛地說「多練習就會進步」
+【評分標準】（請依此計算 overall_score）
+1. 基礎分 60 分
+2. 自信 ≥30% 加 15 分，≥50% 再加 10 分
+3. 熱忱 ≥30% 加 10 分
+4. 放鬆 ≥30% 加 5 分
+5. 緊張 ≥20% 扣 10 分，≥35% 扣 15 分
+6. 最終分數限制在 40-98 分之間
 
-        ✅ 必須做到：
-        - 給出**具體到可以今天就執行**的建議（例如：練習時對著鏡子微笑、回答前先深呼吸 3 秒）
-        - 針對**面試技巧**給建議（眼神接觸、手勢運用、語速控制、開場白設計）
-        - 像一個真正關心學生的教練那樣說話，有溫度但直接
-
-        【輸出格式】
-        請只回傳一個 JSON，不要有任何 Markdown 標記：
-        {{
-            "overall_score": (0-100 整數，根據自信+熱忱的表現給分，緊張高要扣分),
-            "comment": (50-80 字的短評，告訴學生他這次表現的亮點和需要改進的地方，要具體、有溫度，不要廢話),
-            "suggestion": (一句話的具體行動建議，例如「下次回答問題前，先對面試官微笑並點頭，再開始說話」)
-        }}
-        """
-
-        if client:
-            print(f"🤖 正在呼叫 OpenAI ({model_name})...")
+【回覆格式】
+請只回傳純 JSON（不要 Markdown 區塊），格式如下：
+{{
+  "overall_score": 計算後的整數分數,
+  "comment": "100-150字的綜合評語，用「你」直接對學生說話，需包含：(1) 你的表現優點 (2) 你需要改進之處 (3) 整體評價",
+  "suggestion": "2-3 條具體可執行的改進建議，用「你」對學生說話，用分號分隔"
+}}"""
             
-            # 使用 asyncio.to_thread 在背景執行同步 OpenAI 呼叫
-            import asyncio
-            
-            def call_openai():
-                return client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    timeout=30,  # 30 秒超時
-                )
-            
-            try:
-                response = await asyncio.to_thread(call_openai)
-                content = response.choices[0].message.content
-                clean_text = content.replace('```json', '').replace('```', '').strip()
-                feedback_json = json.loads(clean_text)
-                print("📝 AI 評語生成成功！")
-            except Exception as openai_err:
-                print(f"⚠️ OpenAI 呼叫失敗: {openai_err}")
-                raise openai_err
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": "你是專業面試教練，擅長分析微表情並給予具體建議。請只回傳 JSON，不要使用 Markdown。"},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 512  # ★ 增加 token 上限
+        }
+        
+        print("🤖 呼叫 OpenAI 生成評語 (同步，在獨立線程中)...")
+        
+        # ★★★ 使用同步 httpx ★★★
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+        
+        if resp.status_code == 200:
+            content = resp.json()["choices"][0]["message"]["content"]
+            clean = content.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean)
         else:
-            raise Exception("OpenAI Client not initialized")
+            raise Exception(f"API Error {resp.status_code}")
 
     except Exception as e:
-        print(f"⚠️ AI 生成出現狀況 ({e})，正在啟動自動救援模式...")
+        print(f"⚠️ 啟用救援評語: {e}")
+        # ★★★ 改進版救援邏輯：使用評分標準計算 ★★★
+        c = int(confidence) if 'confidence' in dir() else int(final_scores_float.get('confidence', 0))
+        p = int(final_scores_float.get('passion', 0))
+        r = int(final_scores_float.get('relaxed', 0))
+        n = int(final_scores_float.get('nervous', 0))
         
-        c_score = int(final_scores_float.get('confidence', 0))
-        n_score = int(final_scores_float.get('nervous', 0))
-        p_score = int(final_scores_float.get('passion', 0))
+        calc_score = 60
+        if c >= 30: calc_score += 15
+        if c >= 50: calc_score += 10
+        if p >= 30: calc_score += 10
+        if r >= 30: calc_score += 5
+        if n >= 20: calc_score -= 10
+        if n >= 35: calc_score -= 15
+        calc_score = int(min(max(calc_score, 40), 98))
         
-        calc_score = 70 + (c_score * 0.3) + (p_score * 0.2) - (n_score * 0.2)
-        calc_score = int(min(max(calc_score, 65), 96))
-
-        if c_score >= 50:
-            fallback_comment = "你的表現相當穩健，眼神接觸充滿自信，給人留下了很好的第一印象。整體氛圍控制得宜，展現了不錯的抗壓性，是一位很有潛力的考生。"
-            fallback_suggestion = "可以嘗試在回答時加入更多具體的個人經歷，讓內容更具說服力，並保持目前的自信姿態。"
-        elif n_score >= 30:
-            fallback_comment = "面試過程中你看起來有些許緊張，導致表情略顯僵硬，這在模擬面試中是很正常的。不過你的態度依然誠懇，只要多加練習，定能克服焦慮。"
-            fallback_suggestion = "建議練習深呼吸放鬆法，並試著在鏡子前多練習微笑，增加親和力，避免因緊張而忘詞。"
-        elif p_score >= 30:
-            fallback_comment = "你談論到相關話題時展現了不錯的熱忱，這點非常吸引人。不過在其他部分可以再放鬆一些，讓整體表現更為自然流暢。"
-            fallback_suggestion = "試著將這份熱情延伸到自我介紹中，並注意語速的控制，讓面試官能更清楚接收你的訊息。"
-        else:
-            fallback_comment = "整場面試表現中規中矩，情緒波動不大，展現了沈穩的一面。雖然沒有太多失誤，但也少了些許記憶點，建議展現更多對該領域的企圖心。"
-            fallback_suggestion = "回答問題時可以適度加強語氣的抑揚頓挫，並多運用手勢輔助，讓面試官感受到你的積極度。"
-
-        feedback_json = {
+        return {
             "overall_score": calc_score,
-            "comment": fallback_comment,
-            "suggestion": fallback_suggestion
+            "comment": f"你的自信程度為 {c}%，整體表現{'良好' if c >= 50 else '尚可'}。{'熱忱度足夠，能感受到你對這次面試的重視。' if p >= 40 else '建議展現更多熱忱。'}{'但緊張程度較高，可能影響發揮。' if n >= 50 else '情緒控制穩定。'}建議多練習模擬面試以提升表現。",
+            "suggestion": "面試前做 3 次深呼吸放鬆；練習對鏡子回答問題；準備 2-3 個自己的故事案例"
         }
-        print(f"✅ 已啟用救援評語 (分數: {calc_score})")
-    
-    return feedback_json
 
 
-async def analyze_portfolio(pdf_path: str) -> dict:
+async def analyze_video(video_path: str, save_video: bool = True) -> dict:
     """
-    分析學習歷程 PDF
+    非同步分析影片
+    - 影片處理：在 ThreadPoolExecutor 中執行（不阻塞主線程）
+    - AI 評語：也在 ThreadPoolExecutor 中執行
+    """
+    loop = asyncio.get_event_loop()
     
-    Args:
-        pdf_path: PDF 檔案路徑
-        
-    Returns:
-        分析結果 dict
-    """
+    # ★★★ 使用 ThreadPoolExecutor 執行影片分析 ★★★
+    # 這樣即使影片處理崩潰，也不會影響主程式
+    video_result = await loop.run_in_executor(executor, _analyze_video_sync, video_path, save_video)
+    
+    if "error" in video_result:
+        return video_result
+    
+    # 提取分析結果
+    final_scores_float = video_result.pop("final_scores_float", {})
+    
+    # ★★★ 在獨立線程中呼叫 OpenAI ★★★
+    ai_feedback = await loop.run_in_executor(executor, _generate_ai_feedback_sync, final_scores_float)
+    
+    video_result["ai_analysis"] = ai_feedback
+    return video_result
+
+
+def _analyze_portfolio_sync(pdf_path: str) -> dict:
+    """同步分析學習歷程 PDF (在獨立線程中執行)"""
     try:
         # 提取 PDF 文字內容
         try:
-            import pdfplumber
+            from PyPDF2 import PdfReader
             text_content = ""
-            with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_content += page_text + "\n"
+            
+            reader = PdfReader(pdf_path)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    text_content += t + "\n"
             
             print(f"📖 提取到 {len(text_content)} 字")
             
             if len(text_content.strip()) < 50:
-                os.remove(pdf_path)
+                try: os.remove(pdf_path)
+                except: pass
                 return {"error": "PDF 內容過少或為純圖片格式，無法分析。請上傳包含文字的 PDF。"}
             
         except Exception as pdf_err:
-            os.remove(pdf_path)
+            try: os.remove(pdf_path)
+            except: pass
             print(f"❌ PDF 解析失敗: {pdf_err}")
-            return {"error": f"PDF 解析失敗: {str(pdf_err)}。請確認已安裝 pdfplumber"}
+            return {"error": f"PDF 解析失敗: {str(pdf_err)}"}
         
-        if not client:
-            os.remove(pdf_path)
+        if not OPENAI_API_KEY:
+            try: os.remove(pdf_path)
+            except: pass
             return {"error": "OpenAI API 未設定"}
         
         # 限制文字長度
@@ -418,38 +403,56 @@ async def analyze_portfolio(pdf_path: str) -> dict:
             ],
             "comment": (100-150字的整體評語，指出這份學習歷程的亮點和可以加強的地方，要具體、有建設性),
             "suggestions": [
-                "具體改進建議1（例如：可以補充實作過程中遇到的困難和解決方法）",
+                "具體改進建議1",
                 "具體改進建議2",
                 "具體改進建議3"
             ]
         }}
         """
         
-        print("🤖 正在呼叫 OpenAI 分析學習歷程...")
+        print("🤖 正在呼叫 OpenAI 分析學習歷程 (同步，在獨立線程中)...")
         
-        response = client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
                 {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-        )
-        
-        content = response.choices[0].message.content
-        clean_text = content.replace('```json', '').replace('```', '').strip()
-        result_json = json.loads(clean_text)
-        print(f"✅ 學習歷程分析完成！分數: {result_json.get('overall_score', 'N/A')}")
-        
-        # 刪除暫存 PDF
-        os.remove(pdf_path)
-        
-        return {
-            "success": True,
-            "analysis": result_json
+            "temperature": 0.7,
         }
+        
+        # ★★★ 使用同步 httpx ★★★
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+        
+        if resp.status_code == 200:
+            content = resp.json()["choices"][0]["message"]["content"]
+            clean_text = content.replace('```json', '').replace('```', '').strip()
+            result_json = json.loads(clean_text)
+            print(f"✅ 學習歷程分析完成！分數: {result_json.get('overall_score', 'N/A')}")
+            
+            try: os.remove(pdf_path)
+            except: pass
+            
+            return {
+                "success": True,
+                "analysis": result_json
+            }
+        else:
+             raise Exception(f"API Error: {resp.status_code}")
         
     except Exception as e:
         print(f"❌ 學習歷程分析失敗: {e}")
         traceback.print_exc()
         return {"error": f"分析失敗: {str(e)}"}
+
+
+async def analyze_portfolio(pdf_path: str) -> dict:
+    """非同步入口 - 在獨立線程中執行分析"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, _analyze_portfolio_sync, pdf_path)

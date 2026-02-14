@@ -177,8 +177,10 @@ class SqlService {
         "Privacy, "
         "REPLACE(AIComment, CHAR(34), CHAR(39)) as AIComment, "
         "REPLACE(AISuggestion, CHAR(34), CHAR(39)) as AISuggestion, "
-        "REPLACE(TimelineData, CHAR(34), CHAR(39)) as TimelineData, "  // CHAR(34)=雙引號, CHAR(39)=單引號
-        "VideoUrl";
+        "REPLACE(TimelineData, CHAR(34), CHAR(39)) as TimelineData, "
+        "VideoUrl, "
+        "REPLACE(Questions, CHAR(34), CHAR(39)) as Questions, "  // ★ 加回 REPLACE
+        "InterviewName";
 
     String sql = userId.contains('@')
         ? "SELECT $safeSelect FROM InterviewRecords WHERE StudentID = (SELECT UserID FROM Users WHERE Email = '$userId') ORDER BY Date DESC"
@@ -194,7 +196,7 @@ class SqlService {
   static Future<void> deleteRecord(String recordId) async {
     // 先刪除相關留言 (避免外鍵衝突)，如果 Comments 表不存在就跳過
     try {
-      await _safeWrite("DELETE FROM Comments WHERE RecordID = $recordId");
+      await _safeWrite("DELETE FROM RecordComments WHERE RecordID = $recordId");
     } catch (e) {
       print("⚠️ 刪除留言時出錯 (可能表不存在): $e");
       // 繼續執行，不中斷
@@ -208,6 +210,8 @@ class SqlService {
     String safeComment = r.aiComment.replaceAll("'", "''");
     String safeSuggestion = r.aiSuggestion.replaceAll("'", "''");
     String safeTimeline = r.timelineData.replaceAll("'", "''");
+    String questionsJson = jsonEncode(r.questions);
+    String safeName = r.interviewName.replaceAll("'", "''"); // ★ 新增
     String sql = 
         "INSERT INTO InterviewRecords ("
         "  StudentID, "
@@ -222,7 +226,9 @@ class SqlService {
         "  AIComment, "
         "  AISuggestion, "
         "  TimelineData, "
-        "  VideoUrl" // ★ 新增
+        "  VideoUrl, "
+        "  Questions, "
+        "  InterviewName" // ★ 新增
         ") "
         "VALUES ("
         "  (SELECT UserID FROM Users WHERE Email = '${r.studentId}'), " // StudentID (子查詢)
@@ -237,7 +243,9 @@ class SqlService {
         "  N'$safeComment', "     // AIComment
         "  N'$safeSuggestion', "  // AISuggestion
         "  '$safeTimeline', "     // TimelineData
-        "  '${r.videoUrl}'"       // ★ 新增
+        "  '${r.videoUrl}', "     // VideoUrl
+        "  N'$questionsJson', "   // Questions
+        "  N'$safeName'"          // ★ 新增 InterviewName
         ")";
     await _safeWrite(sql);
   }

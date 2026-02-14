@@ -78,7 +78,9 @@ class InterviewRecord {
   final String aiComment;
   final String aiSuggestion;
   final String timelineData;
-  final String? videoUrl; // ★ 新增：影片網址
+  final String? videoUrl;
+  final List<String> questions;
+  final String interviewName; // ★ 新增：面試名稱
 
   InterviewRecord({
     required this.id,
@@ -94,7 +96,9 @@ class InterviewRecord {
     this.studentName = '',
     this.aiComment = '',
     this.aiSuggestion = '',
-    this.videoUrl, // ★ 新增
+    this.videoUrl,
+    this.questions = const [],
+    this.interviewName = '', // ★ 新增：面試名稱
   });
 
   int get overallScore => scores['overall'] ?? 0;
@@ -114,8 +118,33 @@ class InterviewRecord {
       aiComment: map['AIComment'] ?? '',
       aiSuggestion: map['AISuggestion'] ?? '',
       timelineData: map['TimelineData'] ?? '[]',
-      videoUrl: map['VideoUrl'], // ★ 新增
+      videoUrl: map['VideoUrl'],
+      questions: _parseQuestions(map['Questions']),
+      interviewName: map['InterviewName'] ?? '', // ★ 新增
     );
+  }
+
+  // ★ 修正：解析問題列表（先嘗試原始格式，失敗再轉換）
+  static List<String> _parseQuestions(dynamic jsonStr) {
+    if (jsonStr == null || jsonStr == '') return [];
+    if (jsonStr is List) return List<String>.from(jsonStr);
+    if (jsonStr is String) {
+      // 1. 先嘗試直接解析原始 JSON
+      try {
+        final decoded = jsonDecode(jsonStr);
+        if (decoded is List) return List<String>.from(decoded);
+      } catch (_) {}
+      
+      // 2. 失敗的話，嘗試把單引號換成雙引號
+      try {
+        String clean = jsonStr.replaceAll("'", '"');
+        final decoded = jsonDecode(clean);
+        if (decoded is List) return List<String>.from(decoded);
+      } catch (e) {
+        print("⚠️ 解析問題失敗: $e, 原始資料: ${jsonStr.substring(0, jsonStr.length > 100 ? 100 : jsonStr.length)}...");
+      }
+    }
+    return [];
   }
 
   static Map<String, int> _parseScores(dynamic jsonStr) {

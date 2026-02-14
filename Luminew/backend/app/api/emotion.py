@@ -8,6 +8,7 @@ from app.services.emotion_service import (
     analyze_portfolio, 
     get_video_storage_dir
 )
+from app.services.question_generator import analyze_pdf_and_generate_questions
 import uuid
 import os
 
@@ -76,5 +77,43 @@ async def api_analyze_portfolio(pdf: UploadFile = File(...)):
     
     if "error" in result:
         return result, 400
+    
+    return result
+
+
+@router.post("/generate_questions")
+async def api_generate_questions(
+    pdf: UploadFile = File(...),
+    interview_type: str = Form(default="通用型")
+):
+    """
+    分析 PDF 並生成個人化面試問題
+    
+    - **pdf**: 上傳的 PDF 檔案（學習歷程/履歷）
+    - **interview_type**: 面試類型（通用型/科系專業/學經歷）
+    
+    Returns:
+        生成的面試問題列表
+    """
+    # 儲存上傳的 PDF
+    video_dir = get_video_storage_dir()
+    parent_dir = os.path.dirname(video_dir)
+    pdf_filename = f"questions_{uuid.uuid4()}.pdf"
+    pdf_path = os.path.join(parent_dir, pdf_filename)
+    
+    content = await pdf.read()
+    with open(pdf_path, "wb") as f:
+        f.write(content)
+    
+    print(f"📄 收到問題生成請求: {pdf.filename} (類型: {interview_type})")
+    
+    # 分析 PDF 並生成問題
+    result = await analyze_pdf_and_generate_questions(pdf_path, interview_type)
+    
+    # 刪除暫存 PDF
+    try:
+        os.remove(pdf_path)
+    except:
+        pass
     
     return result

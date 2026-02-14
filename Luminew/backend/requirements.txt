@@ -1,6 +1,7 @@
 fastapi          # 後端 API 框架
 uvicorn[standard]          # FastAPI 啟動伺服器
 requests         # 呼叫 OpenAI / Yating API
+httpx            # 非同步 HTTP 客戶端（多線程用）
 websockets       # 即時語音 / ASR WebSocket
 sounddevice      # 播放音訊（你要換掉 simpleaudio）
 numpy            # sounddevice 需要

@@ -1,17 +1,17 @@
 // fileName: lib/screens/interview_screens.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart'; // 確保 pubspec.yaml 有 camera
-import 'package:http/http.dart' as http; // 確保 pubspec.yaml 有 h
+import 'package:camera/camera.dart';
+import 'package:http/http.dart' as http;
+import 'package:fl_chart/fl_chart.dart';
+import 'package:video_player/video_player.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models.dart';
 import '../mock_data.dart';
-import '../sql_service.dart'; // 必須引用，用於存檔與讀取留言
-import 'package:fl_chart/fl_chart.dart';
-import 'package:video_player/video_player.dart'; // ★ 新增引用
-import 'dart:io';
-import 'package:video_player/video_player.dart'; // ★ 新增引用
-import 'dart:io';
+import '../sql_service.dart';
+
 
 // 全域變數：用來儲存可用的相機列表
 List<CameraDescription> cameras = [];
@@ -109,9 +109,15 @@ class _InterviewRecordListScreenState extends State<InterviewRecordListScreen> {
                       ),
                     ),
                   ),
-                  title: Text('${r.type} (${r.language})'),
+                  // ★ 改成顯示自訂面試名稱
+                  title: Text(
+                    r.interviewName.isNotEmpty ? r.interviewName : '${r.type} (${r.language})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // ★ 顯示日期時間
                   subtitle: Text(
-                    '${r.date.toString().split(' ')[0]} | ${r.interviewer}',
+                    '${r.date.year}-${r.date.month.toString().padLeft(2, '0')}-${r.date.day.toString().padLeft(2, '0')} ${r.date.hour.toString().padLeft(2, '0')}:${r.date.minute.toString().padLeft(2, '0')} | ${r.interviewer}',
                   ),
                   // ★ 修改：trailing 改成 Row（刪除按鈕 + 箭頭）
                   trailing: Row(
@@ -167,7 +173,7 @@ class _InterviewRecordListScreenState extends State<InterviewRecordListScreen> {
 }
 
 // ==========================================
-// 2. 面試設定頁 (完整下拉選單)
+// 2. 面試設定頁 (完整下拉選單 + 檔案上傳)
 // ==========================================
 class MockInterviewSetupScreen extends StatefulWidget {
   final AppUser user;
@@ -184,12 +190,98 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
   String _interviewer = '保羅';
   String _lang = '中文';
   bool _saveVideo = true;
+  
+  // ★ 新增：面試名稱（必填）
+  final TextEditingController _nameController = TextEditingController();
+  String? _nameError;
+  
+  // 檔案上傳相關
+  File? _selectedFile;
+  String? _selectedFileName;
+  List<String> _generatedQuestions = [];
+  bool _isAnalyzing = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  // ★ 選擇 PDF 檔案
+  Future<void> _pickFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _selectedFile = File(result.files.single.path!);
+        _selectedFileName = result.files.single.name;
+        _generatedQuestions = []; // 清除舊問題
+      });
+      
+      // 自動開始分析
+      await _analyzeFileAndGenerateQuestions();
+    }
+  }
+
+  // ★ 上傳檔案並生成問題
+  Future<void> _analyzeFileAndGenerateQuestions() async {
+    if (_selectedFile == null) return;
+    
+    setState(() => _isAnalyzing = true);
+    
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('http://10.0.2.2:8000/emotion/generate_questions'),
+      );
+      
+      request.files.add(await http.MultipartFile.fromPath('pdf', _selectedFile!.path));
+      request.fields['interview_type'] = _type;
+      
+      print("📤 上傳 PDF 並生成問題...");
+      var streamedResponse = await request.send().timeout(
+        const Duration(seconds: 90),
+        onTimeout: () {
+          throw Exception("連線逾時");
+        },
+      );
+      
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          setState(() {
+            // ★ 修正：確保每個元素都轉成 String
+            _generatedQuestions = (data['questions'] as List)
+                .map((q) => q.toString())
+                .toList();
+          });
+          print("✅ 成功生成 ${_generatedQuestions.length} 個問題");
+        } else {
+          print("⚠️ 問題生成失敗: ${data['message']}");
+        }
+      } else {
+        print("❌ API 錯誤: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("❌ 錯誤: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('問題生成失敗: $e')),
+      );
+    } finally {
+      setState(() => _isAnalyzing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('面試設定')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,6 +291,26 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
+
+            // ★ 0. 面試名稱（必填）
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: '面試名稱',
+                  hintText: '例如：輔大資管系面試練習',
+                  border: const OutlineInputBorder(),
+                  errorText: _nameError,
+                  suffixIcon: const Icon(Icons.edit, color: Colors.grey),
+                ),
+                onChanged: (v) {
+                  if (_nameError != null && v.isNotEmpty) {
+                    setState(() => _nameError = null);
+                  }
+                },
+              ),
+            ),
 
             // 1. 面試類型
             _buildDropdown('面試類型', [
@@ -228,11 +340,87 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
               onChanged: (v) => setState(() => _saveVideo = v),
             ),
 
-            const Spacer(),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
 
+            // ★ 5. 檔案上傳區塊
+            const Text(
+              "上傳學習歷程（選填）",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "AI 將根據您的學習歷程生成個人化面試問題",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            
+            // 檔案選擇按鈕
+            OutlinedButton.icon(
+              onPressed: _isAnalyzing ? null : _pickFile,
+              icon: Icon(_selectedFile == null ? Icons.upload_file : Icons.check_circle),
+              label: Text(_selectedFile == null 
+                ? '選擇 PDF 檔案' 
+                : _selectedFileName ?? '已選擇檔案'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                side: BorderSide(
+                  color: _selectedFile == null ? Colors.grey : Colors.green,
+                ),
+              ),
+            ),
+            
+            // 分析中指示器
+            if (_isAnalyzing) ...[
+              const SizedBox(height: 12),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 12),
+                  Text('AI 正在分析您的學習歷程...'),
+                ],
+              ),
+            ],
+            
+            // 顯示生成的問題數量
+            if (_generatedQuestions.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      '已生成 ${_generatedQuestions.length} 個個人化問題',
+                      style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
+            // 開始面試按鈕
             ElevatedButton(
-              onPressed: () {
-                // 將選好的參數傳遞給錄影頁面
+              onPressed: _isAnalyzing ? null : () {
+                // ★ 驗證面試名稱必填
+                if (_nameController.text.trim().isEmpty) {
+                  setState(() => _nameError = '該欄位必填');
+                  return;
+                }
+                
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -242,6 +430,8 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
                       interviewer: _interviewer,
                       language: _lang,
                       saveVideo: _saveVideo,
+                      questions: _generatedQuestions.isNotEmpty ? _generatedQuestions : null,
+                      interviewName: _nameController.text.trim(), // ★ 新增
                     ),
                   ),
                 );
@@ -255,6 +445,8 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
             ),
+            
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -284,6 +476,7 @@ class _MockInterviewSetupScreenState extends State<MockInterviewSetupScreen> {
   }
 }
 
+
 // ==========================================
 // 3. 面試錄影頁 (相機 + AI連線 + SQL儲存)
 // ==========================================
@@ -293,6 +486,8 @@ class MockInterviewScreen extends StatefulWidget {
   final String interviewer;
   final String language;
   final bool saveVideo;
+  final List<String>? questions;
+  final String interviewName; // ★ 新增：面試名稱
 
   const MockInterviewScreen({
     super.key,
@@ -301,6 +496,8 @@ class MockInterviewScreen extends StatefulWidget {
     required this.interviewer,
     required this.language,
     required this.saveVideo,
+    required this.interviewName, // ★ 新增
+    this.questions,
   });
 
   @override
@@ -447,7 +644,9 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
           aiComment: ai['comment'] ?? '',
           aiSuggestion: ai['suggestion'] ?? '',
           timelineData: jsonEncode(timelineList),
-          videoUrl: data['video_url'], // ★ 新增：把影片網址存進紀錄
+          videoUrl: data['video_url'],
+          questions: widget.questions ?? [],
+          interviewName: widget.interviewName, // ★ 新增：面試名稱
         );
 
         // 1. 存入 Mock (即時顯示用)
@@ -615,6 +814,49 @@ class _MockInterviewScreenState extends State<MockInterviewScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  
+                // ★ 新增：顯示個人化問題
+                if (widget.questions != null && widget.questions!.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.question_answer, color: Colors.amber, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                '個人化面試問題',
+                                style: TextStyle(
+                                  color: Colors.amber,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ...widget.questions!.asMap().entries.map((entry) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '${entry.key + 1}. ${entry.value}',
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -798,15 +1040,16 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
     statList.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
 
     return DefaultTabController(
-      length: 3,
+      length: 4, // ★ 改為 4 個 Tab
       child: Scaffold(
         appBar: AppBar(
           title: const Text('面試結果'),
           bottom: const TabBar(
             tabs: [
               Tab(text: 'AI 分析'), // Tab 1: AI 分析報告
-              Tab(text: '評語討論'), // Tab 2: 留言板功能
-              Tab(text: '詳細設定'), // Tab 3: 隱私設定與回放
+              Tab(text: '面試問題'), // ★ 新增 Tab 2: 面試問題
+              Tab(text: '評語討論'), // Tab 3: 留言板功能
+              Tab(text: '詳細設定'), // Tab 4: 隱私設定與回放
             ],
           ),
         ),
@@ -1107,7 +1350,160 @@ class _InterviewResultScreenState extends State<InterviewResultScreen> {
             ),
 
             // ------------------------------------
-            // Tab 2: 評語討論 (留言板功能)
+            // ★ 新增 Tab 2: 面試問題
+            // ------------------------------------
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 標題區
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.teal.shade600, Colors.teal.shade400],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.quiz, color: Colors.white, size: 32),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '本次面試問題',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '共 ${widget.record.questions.length} 題個人化問題',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // 問題列表
+                  if (widget.record.questions.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(40),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Column(
+                          children: [
+                            Icon(Icons.info_outline, size: 48, color: Colors.grey),
+                            SizedBox(height: 12),
+                            Text(
+                              '此次面試未記錄問題',
+                              style: TextStyle(color: Colors.grey, fontSize: 16),
+                            ),
+                            Text(
+                              '上傳學習歷程 PDF 可生成個人化問題',
+                              style: TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    ...widget.record.questions.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      String question = entry.value;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.1),
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: Colors.teal,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                question,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 提示文字
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber[200]!),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline, color: Colors.amber, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '這些問題是根據你的學習歷程 PDF 自動生成的，可以幫助你準備真正的面試！',
+                            style: TextStyle(fontSize: 13, color: Colors.brown),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ------------------------------------
+            // Tab 3: 評語討論 (留言板功能)
             // ------------------------------------
             Column(
               children: [

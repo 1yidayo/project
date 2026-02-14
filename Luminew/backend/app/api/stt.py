@@ -23,9 +23,9 @@ def api_stop_recording():
     is_recording = False
     return {"status": "recording_stopped"}
 
-# 啟動 ASR WebSocket（後台持續跑）
-@router.on_event("startup")
-def startup_asr():
-    def handle_final(text):
-        print("[ASR final]", text)
-    start_asr_background(handle_final)
+# 啟動 ASR WebSocket（暫時禁用 - 移到手動啟動）
+# @router.on_event("startup")
+# def startup_asr():
+#     def handle_final(text):
+#         print("[ASR final]", text)
+#     start_asr_background(handle_final)
