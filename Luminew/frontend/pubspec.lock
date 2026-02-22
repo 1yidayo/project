@@ -521,10 +521,10 @@ packages:
     dependency: "direct main"
     description:
       name: sql_conn
-      sha256: "9ed89323d97494c040b7eb093680d61aa9b623487ad1cb39d8e7cf4bca8b1437"
+      sha256: "7edbdf58b63eddcc69f63c19c32f68a30f0dabddd08842795ec74a6aba8e4439"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.3"
+    version: "2.0.0"
   stack_trace:
     dependency: transitive
     description:

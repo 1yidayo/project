@@ -39,7 +39,7 @@ dependencies:
   cloud_firestore: ^6.1.0
   firebase_storage: ^13.0.4
   file_picker: ^10.3.6
-  sql_conn: ^0.0.3
+  sql_conn: ^2.0.0
   camera: ^0.11.3
   http: ^1.6.0
   fl_chart: ^1.1.1

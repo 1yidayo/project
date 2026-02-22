@@ -34,11 +34,12 @@ class _TestPageState extends State<TestPage> {
 
     try {
       await SqlConn.connect(
-        ip: "10.0.2.2", // 👈 關鍵：模擬器連電腦專用 IP
-        port: "1433", // 👈 剛剛開通的 Port
-        databaseName: "LuminewDB", // 👈 剛剛在 SSMS 建立的資料庫
-        username: "sa", // 👈 剛剛啟用的帳號
-        password: "112233", // 👈 剛剛設定的密碼 (如果不一樣請自己改)
+        connectionId: "testDB",
+        host: "10.0.2.2",      // 👈 關鍵：模擬器連電腦專用 IP
+        port: 1433,             // 👈 剛剛開通的 Port (新版是 int)
+        database: "LuminewDB",  // 👈 剛剛在 SSMS 建立的資料庫
+        username: "sa",         // 👈 剛剛啟用的帳號
+        password: "112233",     // 👈 剛剛設定的密碼 (如果不一樣請自己改)
       );
 
       setState(() {
@@ -56,7 +57,7 @@ class _TestPageState extends State<TestPage> {
   Future<void> read() async {
     try {
       // 讀取剛剛建立的 Users 表格
-      var res = await SqlConn.readData("SELECT * FROM Users");
+      var res = await SqlConn.read("testDB", "SELECT * FROM Users");
       setState(() {
         status = "讀取資料成功：\n$res";
       });

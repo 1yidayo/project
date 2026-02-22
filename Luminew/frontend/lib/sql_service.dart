@@ -4,33 +4,52 @@ import 'dart:math'; // ★ 必須引入，用於生成 6 位數代碼
 import 'package:sql_conn/sql_conn.dart';
 import 'models.dart';
 
+/// ★ 將 sql_conn 2.0 的回傳值統一轉成 JSON 字串
+/// 新版可能回傳 List<Map> 而非 JSON String，需要統一格式
+String _toJsonString(dynamic result) {
+  if (result == null) return "[]";
+  if (result is String) return result.isEmpty ? "[]" : result;
+  if (result is List) return jsonEncode(result);
+  return result.toString();
+}
+
 class SqlService {
   // ★ 請確認您的 IP (模擬器通常是 10.0.2.2)
-  static const String _ip = "10.0.2.2";
-  static const String _port = "1433";
+  static const String _host = "10.0.2.2";
+  static const int _port = 1433;
   static const String _dbName = "LuminewDB";
   static const String _user = "sa";
   static const String _pass = "112233";
+
+  // ★ 新版 sql_conn 2.0 需要 connectionId
+  static const String _connId = "mainDB";
+
+  // ★ 自行管理連線狀態 (新版沒有 isConnected)
+  static bool _connected = false;
 
   // 連線與重連機制
   static Future<void> connect({bool force = false}) async {
     try {
       if (force) {
         try {
-          await SqlConn.disconnect();
+          await SqlConn.disconnect(_connId);
+          _connected = false;
         } catch (_) {}
       }
-      if (!SqlConn.isConnected || force) {
+      if (!_connected || force) {
         await SqlConn.connect(
-          ip: _ip,
+          connectionId: _connId,
+          host: _host,
           port: _port,
-          databaseName: _dbName,
+          database: _dbName,
           username: _user,
           password: _pass,
         );
+        _connected = true;
         print("✅ SQL 連線成功");
       }
     } catch (e) {
+      _connected = false;
       print("❌ 連線失敗: $e");
       throw e;
     }
@@ -38,31 +57,34 @@ class SqlService {
 
   static Future<String> _safeRead(String sql) async {
     try {
-      if (!SqlConn.isConnected) await connect();
-      return await SqlConn.readData(sql);
+      if (!_connected) await connect();
+      var result = await SqlConn.read(_connId, sql);
+      return _toJsonString(result);
     } catch (e) {
       print("⚠️ 讀取異常，嘗試重連: $e");
       await connect(force: true);
-      return await SqlConn.readData(sql);
+      var result = await SqlConn.read(_connId, sql);
+      return _toJsonString(result);
     }
   }
 
   static Future<void> _safeWrite(String sql) async {
     try {
-      if (!SqlConn.isConnected) await connect();
-      await SqlConn.writeData(sql);
+      if (!_connected) await connect();
+      await SqlConn.write(_connId, sql);
     } catch (e) {
       print("⚠️ 寫入異常，嘗試重連: $e");
       await connect(force: true);
-      await SqlConn.writeData(sql);
+      await SqlConn.write(_connId, sql);
     }
   }
 
   // 除錯用工具
   static Future<String> readDataDebug(String sql) async {
     try {
-      if (!SqlConn.isConnected) await connect();
-      return await SqlConn.readData(sql);
+      if (!_connected) await connect();
+      var result = await SqlConn.read(_connId, sql);
+      return _toJsonString(result);
     } catch (e) {
       return "Error: $e";
     }
