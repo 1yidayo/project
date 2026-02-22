@@ -16,4 +16,4 @@ opencv-python    # 人臉偵測
 Pillow           # 影像處理
 openai           # OpenAI API (AI 評語)
 pdfplumber       # PDF 文字提取
-python-multipart # FastAPI 檔案上傳
+python-multipart # FastAPI 檔案上傳 
