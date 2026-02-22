@@ -1,3 +1,4 @@
+#暫時用不到 沒有在維護
 from fastapi import APIRouter, BackgroundTasks
 from app.services.yating_stt import start_asr_background, start_recording, stop_recording
 from typing import Callable

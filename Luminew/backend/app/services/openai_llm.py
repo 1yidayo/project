@@ -4,6 +4,7 @@ import requests
 import time
 from dotenv import load_dotenv
 import os
+from professor_persona import get_professor_prompt
 
 # 讀取 .env
 load_dotenv()
@@ -11,7 +12,9 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # 從 .env 拿
 OPENAI_RESPONSES_URL = os.getenv("OPENAI_RESPONSES_URL")
 
-def ask_gpt4_1_nano(prompt, system_instructions=None, retry=3):
+def ask_gpt4_1_nano(conversation_history, professor_type="warm_industry_professor", retry=3):
+    system_prompt = get_professor_prompt(professor_type)
+
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
@@ -19,15 +22,12 @@ def ask_gpt4_1_nano(prompt, system_instructions=None, retry=3):
 
     payload = {
         "model": "gpt-4.1-nano",
-        "input": [
-            {"role": "system", "content": system_instructions or "你是溫和的台灣教授。"},
-            {"role": "user", "content": prompt}
-        ]
+        "input": conversation_history
     }
 
     for attempt in range(retry):
         try:
-            r = requests.post(OPENAI_RESPONSES_URL, json=payload, headers=headers, timeout=10)
+            r = requests.post(OPENAI_RESPONSES_URL, json=payload, headers=headers, timeout=20)
             r.raise_for_status()
             data = r.json()
             return data["output"][0]["content"][0]["text"]
@@ -38,7 +38,35 @@ def ask_gpt4_1_nano(prompt, system_instructions=None, retry=3):
                 continue
             return "(GPT 回應失敗)"
 
-# 測試
+#測試
 if __name__ == "__main__":
-    reply = ask_gpt4_1_nano("請用台灣腔說：你好我是教授。")
-    print("GPT 回覆：", reply)
+
+    from professor_persona import get_professor_prompt
+
+    professor_type = "warm_industry_professor"
+    system_prompt = get_professor_prompt(professor_type)
+
+    # 初始化對話歷史
+    conversation_history = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "請開始面試我"}  # ← 預設第一句
+    ]
+
+    print("=== 模擬面試官開始 ===")
+    print("輸入 'exit' 結束模擬")
+
+    while True:
+
+        # GPT 回覆
+        reply = ask_gpt4_1_nano(conversation_history, professor_type)
+        print(f"教授: {reply}")
+
+        # 把教授回覆加入歷史，方便下次追問
+        conversation_history.append({"role": "assistant", "content": reply})
+
+        # 學生輸入
+        user_input = input("\n學生: ")
+        if user_input.lower() == "exit":
+            break
+
+        conversation_history.append({"role": "user", "content": user_input})
