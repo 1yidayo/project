@@ -4,8 +4,8 @@ import threading
 from queue import Queue
 from app.services.yating_stt import YatingSTT
 from app.services.openai_llm import ask_gpt4_1_nano
-from app.services.minimax_tts_ws import MinimaxTTSWS  # 使用 WebSocket 版本
-from professor_persona import get_professor_persona
+from app.services.minimax_tts import MinimaxTTSWS  # 使用 WebSocket 版本
+from app.services.professor_persona import get_professor_persona
 
 class InterviewManager:
     """

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.api import stt, llm, tts, emotion
+from app.api import stt, llm, tts, emotion, interview
 import os
 
 app = FastAPI(title="Luminew")
@@ -15,6 +15,7 @@ app.include_router(stt.router, prefix="/stt", tags=["ASR"])
 app.include_router(llm.router, prefix="/llm", tags=["LLM"])
 app.include_router(tts.router, prefix="/tts", tags=["TTS"])
 app.include_router(emotion.router, prefix="/emotion", tags=["Emotion"])
+app.include_router(interview.router, prefix="/interview", tags=["Interview"])
 
 @app.get("/")
 def root():

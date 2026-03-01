@@ -191,17 +191,16 @@ class SqlService {
     String userId,
     String filter,
   ) async {
-    // ★ 修改：不使用 SELECT *，而是明確列出欄位並處理引號問題 (防止 JSON 解析失敗)
-    // 將 DB 裡的雙引號 " 替換成 單引號 '，避免 sql_conn 回傳時格式炸裂
-    // 使用 CHAR(39) 代表單引號，避免 Dart 字串轉義問題
+    // ★ 修改：jTDS 會把 NVARCHAR(MAX) 當成 CLOB 物件回傳
+    // 解法：先 CAST 成 NVARCHAR(4000)，再 REPLACE 引號避免 JSON 解析失敗
     String safeSelect = "RecordID, StudentID, Date, DurationSeconds, Type, Interviewer, Language, OverallScore, "
-        "REPLACE(ScoresDetail, CHAR(34), CHAR(39)) as ScoresDetail, "
+        "REPLACE(CAST(ScoresDetail AS NVARCHAR(4000)), CHAR(34), CHAR(39)) as ScoresDetail, "
         "Privacy, "
-        "REPLACE(AIComment, CHAR(34), CHAR(39)) as AIComment, "
-        "REPLACE(AISuggestion, CHAR(34), CHAR(39)) as AISuggestion, "
-        "REPLACE(TimelineData, CHAR(34), CHAR(39)) as TimelineData, "
+        "REPLACE(CAST(AIComment AS NVARCHAR(4000)), CHAR(34), CHAR(39)) as AIComment, "
+        "REPLACE(CAST(AISuggestion AS NVARCHAR(4000)), CHAR(34), CHAR(39)) as AISuggestion, "
+        "REPLACE(CAST(TimelineData AS NVARCHAR(4000)), CHAR(34), CHAR(39)) as TimelineData, "
         "VideoUrl, "
-        "REPLACE(Questions, CHAR(34), CHAR(39)) as Questions, "  // ★ 加回 REPLACE
+        "REPLACE(CAST(Questions AS NVARCHAR(4000)), CHAR(34), CHAR(39)) as Questions, "
         "InterviewName";
 
     String sql = userId.contains('@')

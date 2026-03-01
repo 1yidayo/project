@@ -1,24 +1,24 @@
 # app/api/interview.py
 import asyncio
 import base64
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.minimax_tts import MinimaxTTSWS
 from app.services.yating_stt import YatingSTT
 from app.services.InterviewManager import InterviewManager
 from app.services.professor_persona import get_professor_persona
 
-app = FastAPI(title="Luminew Interview API")
+router = APIRouter()
 
 # 連接 WebSocket 的每個 client 都會有自己的 InterviewManager
 clients = {}
 
 
-@app.websocket("/ws/interview/{client_id}")
+@router.websocket("/ws/{client_id}")
 async def interview_endpoint(websocket: WebSocket, client_id: str):
     await websocket.accept()
     persona = get_professor_persona("warm_industry_professor")  # 可以由前端指定 persona
     stt = YatingSTT()
-    tts = MinimaxTTSWS(api_key=None, voice_id=persona.voice_id)  # voice_id 先用 persona 預設
+    tts = MinimaxTTSWS(api_key=None)
     manager = InterviewManager(professor_type=persona.name)
     manager.stt = stt
     manager.tts = tts

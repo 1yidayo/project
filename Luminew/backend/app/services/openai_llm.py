@@ -4,7 +4,7 @@ import requests
 import time
 from dotenv import load_dotenv
 import os
-from professor_persona import get_professor_prompt
+from app.services.professor_persona import get_professor_persona
 
 # 讀取 .env
 load_dotenv()
@@ -13,7 +13,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # 從 .env 拿
 OPENAI_RESPONSES_URL = os.getenv("OPENAI_RESPONSES_URL")
 
 def ask_gpt4_1_nano(conversation_history, professor_type="warm_industry_professor", retry=3):
-    system_prompt = get_professor_prompt(professor_type)
+    persona = get_professor_persona(professor_type)
+    system_prompt = persona.prompt
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",

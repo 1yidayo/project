@@ -70,6 +70,7 @@ class InterviewRecord {
   final DateTime date;
   final int durationSec;
   final Map<String, int> scores;
+  final int _dbOverallScore; // ★ DB 的 OverallScore 欄位 (fallback 用)
   final String type;
   final String interviewer;
   final String language;
@@ -88,6 +89,7 @@ class InterviewRecord {
     required this.date,
     required this.durationSec,
     required this.scores,
+    int dbOverallScore = 0,
     required this.type,
     this.timelineData = '[]',
     this.interviewer = 'AI 面試官',
@@ -99,9 +101,10 @@ class InterviewRecord {
     this.videoUrl,
     this.questions = const [],
     this.interviewName = '', // ★ 新增：面試名稱
-  });
+  }) : _dbOverallScore = dbOverallScore;
 
-  int get overallScore => scores['overall'] ?? 0;
+  // ★ 優先從 ScoresDetail 讀 overall，沒有的話用 DB 的 OverallScore 欄位
+  int get overallScore => scores['overall'] ?? _dbOverallScore;
 
   factory InterviewRecord.fromMap(Map<String, dynamic> map) {
     return InterviewRecord(
@@ -110,6 +113,7 @@ class InterviewRecord {
       date: DateTime.tryParse(map['Date'].toString()) ?? DateTime.now(),
       durationSec: int.tryParse(map['DurationSeconds'].toString()) ?? 0,
       scores: _parseScores(map['ScoresDetail']),
+      dbOverallScore: int.tryParse(map['OverallScore']?.toString() ?? '0') ?? 0,
       type: map['Type'] ?? '通用型',
       interviewer: map['Interviewer'] ?? 'AI 面試官',
       language: map['Language'] ?? '中文',
