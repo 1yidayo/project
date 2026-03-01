@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.api import interview, llm, tts, emotion  # 不 import stt
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(title="Luminew")
 
