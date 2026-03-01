@@ -6,8 +6,18 @@ from app.services.minimax_tts import MinimaxTTSWS
 from app.services.yating_stt import YatingSTT
 from app.services.InterviewManager import InterviewManager
 from app.services.professor_persona import get_professor_persona
+from fastapi import APIRouter
+from app.services.InterviewManager import InterviewManager
 
 router = APIRouter()
+
+manager = InterviewManager()
+
+@router.post("/start")
+def start_interview():
+    manager.start()
+    return {"status": "started"}
+app = FastAPI(title="Luminew Interview API")
 
 # 連接 WebSocket 的每個 client 都會有自己的 InterviewManager
 clients = {}

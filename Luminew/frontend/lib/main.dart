@@ -7,7 +7,7 @@ import 'screens/teacher_screens.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SqlService.connect();
+  //SqlService.connect();
   runApp(const LuminewApp());
 }
 

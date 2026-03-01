@@ -1,6 +1,7 @@
+# main.py
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.api import stt, llm, tts, emotion, interview
+from app.api import interview, llm, tts, emotion  # 不 import stt
 import os
 
 app = FastAPI(title="Luminew")
@@ -11,7 +12,7 @@ os.makedirs(os.path.join(static_dir, "videos"), exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # 加入路由
-app.include_router(stt.router, prefix="/stt", tags=["ASR"])
+app.include_router(interview.router, prefix="/interview", tags=["Interview"])
 app.include_router(llm.router, prefix="/llm", tags=["LLM"])
 app.include_router(tts.router, prefix="/tts", tags=["TTS"])
 app.include_router(emotion.router, prefix="/emotion", tags=["Emotion"])
