@@ -1,95 +1,146 @@
-# InterviewManager.py
-# 專題級面試管理器（STT / LLM / TTS 整合）
+# app/services/InterviewManager.py
 import threading
+import asyncio
 from queue import Queue
+import time
+
 from app.services.yating_stt import YatingSTT
 from app.services.openai_llm import ask_gpt4_1_nano
-from app.services.minimax_tts import MinimaxTTSWS  # 使用 WebSocket 版本
+from app.services.minimax_tts import MinimaxTTSWS
 from app.services.professor_persona import get_professor_persona
+
 
 class InterviewManager:
     """
     管理整場模擬面試流程：
-    1. 接收學生語音 → STT
-    2. LLM 分析 → 回答教授
-    3. Minimax TTS WebSocket → 返回音訊 chunk 給前端
+    1. 學生語音 → STT
+    2. 說完關麥後 → LLM 生成教授回答
+    3. TTS PCM 直接播放
     """
+
     def __init__(self, professor_type="warm_industry_professor"):
-        # 取得 persona
         self.professor_persona = get_professor_persona(professor_type)
         self.system_prompt = self.professor_persona.prompt
 
         # STT
         self.stt = YatingSTT()
 
-        # TTS (WebSocket)
+        # TTS
         self.tts = MinimaxTTSWS(
-            api_key=None,  # 可從 .env 讀
+            api_key=None,
             default_voice_id=self.professor_persona.voice_id
         )
 
         # 對話歷史
         self.conversation_history = []
 
-        # 音訊 queue（前端傳音訊 chunk 進來）
+        # 音訊 queue
         self.audio_queue = Queue()
 
-        # 狀態
+        # 收集學生語音轉文字後的暫存
+        self.pending_student_texts = []
+
+        # 面試狀態
         self.interview_running = False
 
-    # --- 啟動面試 ---
+    # ------------------------
+    # 啟動面試
+    # ------------------------
     def start_interview(self):
         self.interview_running = True
         print(f"🎓 面試開始（教授: {self.professor_persona.name}）")
-        self.stt.start_recording()
-        threading.Thread(target=self._process_audio_loop, daemon=True).start()
 
-    # --- 停止面試 ---
+        # 啟動 STT 背景
+        self.stt.start_asr_background(self._on_student_text)
+        self.stt.start_recording()
+
+    # ------------------------
+    # 停止面試
+    # ------------------------
     def stop_interview(self):
         self.interview_running = False
         self.stt.stop_recording()
         print("⏹ 面試結束")
 
-    # --- 前端傳入音訊 chunk ---
-    def feed_audio_chunk(self, chunk):
-        if self.interview_running:
-            self.audio_queue.put(chunk)
+        # 如果還有待處理學生文字，結束一次 LLM 回答
+        if self.pending_student_texts:
+            self._process_pending_texts()
 
-    # --- 循環處理音訊 STT / LLM / TTS ---
-    def _process_audio_loop(self):
-        while self.interview_running:
-            chunk = self.audio_queue.get()
-            if chunk is None:
-                continue
+    # ------------------------
+    # STT callback
+    # ------------------------
+    def _on_student_text(self, text):
+        if not self.interview_running:
+            return
 
-            # 1️⃣ STT 轉文字
-            text = self.stt.recognize_chunk(chunk)
-            if not text:
-                continue
-            print("[STT] ", text)
+        print("[ASR final]", text)
+        self.pending_student_texts.append(text)
 
-            # 保存對話歷史
-            self.conversation_history.append({"role": "student", "content": text})
+    # ------------------------
+    # 關麥觸發 LLM 回答
+    # ------------------------
+    def process_speech_end(self):
+        """學生說完話，手動呼叫關麥，送給 LLM"""
+        self.stt.stop_recording()
+        if self.pending_student_texts:
+            self._process_pending_texts()
+            self.pending_student_texts = []
 
-            # 2️⃣ 呼叫 LLM
-            prompt = self._build_llm_prompt()
-            reply = ask_gpt4_1_nano(prompt, professor_type=self.professor_persona.name)
-            print("[Professor] ", reply)
+    # ------------------------
+    # 處理 pending 文字 → LLM → TTS
+    # ------------------------
+    def _process_pending_texts(self):
+        # 合併 pending 文字
+        student_text = " ".join(self.pending_student_texts)
+        print("[STT]", student_text)
 
-            # 保存對話歷史
-            self.conversation_history.append({"role": "professor", "content": reply})
+        # 存歷史
+        self.conversation_history.append({
+            "role": "student",
+            "content": student_text
+        })
 
-            # 3️⃣ TTS 生成 → WebSocket 即時回傳
-            self.tts.speak_stream(
+        # LLM 生成回答
+        prompt = self._build_llm_prompt()
+        reply = ask_gpt4_1_nano(prompt, professor_type=self.professor_persona.name)
+        print("[Professor]", reply)
+        self.conversation_history.append({
+            "role": "professor",
+            "content": reply
+        })
+
+        # TTS PCM 播放（收完再播一次完整音訊）
+        async def play_tts():
+            await self.tts.stream_text(
                 text=reply,
                 voice_id=self.professor_persona.voice_id,
-                on_audio_chunk=self._send_audio_chunk_to_frontend
+                on_chunk=lambda chunk: print("[TTS chunk] bytes:", len(chunk) if chunk else "done")
             )
 
-    # --- 建立 LLM prompt（包含歷史對話） ---
+        # asyncio.run 會阻塞，等播放完再提示開麥
+        asyncio.run(play_tts())
+        print("🔹 TTS 播放完畢，即將自動提示開麥...")
+
+    def process_speech_end(self):
+        """學生說完話，手動或自動呼叫關麥，送給 LLM"""
+        self.stt.stop_recording()
+
+        # 等 STT 把最後一句文字送進 pending
+        time.sleep(0.5)
+
+        if self.pending_student_texts:
+            self._process_pending_texts()
+            self.pending_student_texts = []
+
+        # 再開啟下一段錄音，方便連續測試
+        self.stt.start_recording()
+
+    # ------------------------
+    # 建立 LLM prompt
+    # ------------------------
     def _build_llm_prompt(self):
-        prompt_text = ""
-        for turn in self.conversation_history[-5:]:  # 只帶最近幾句
+        prompt_text = self.system_prompt + "\n\n"
+        for turn in self.conversation_history[-5:]:
             role = turn["role"]
             content = turn["content"]
             if role == "student":
@@ -98,11 +149,3 @@ class InterviewManager:
                 prompt_text += f"教授說: {content}\n"
         prompt_text += "請以教授身份回答下一句。\n"
         return prompt_text
-
-    # --- 回傳前端單個音訊 chunk ---
-    def _send_audio_chunk_to_frontend(self, audio_bytes):
-        """
-        callback 給前端，每收到一個 TTS audio chunk 就會呼叫
-        """
-        # TODO: 改成 WebSocket 或 FastAPI Streaming 回傳
-        print("[TTS audio chunk] bytes length:", len(audio_bytes))

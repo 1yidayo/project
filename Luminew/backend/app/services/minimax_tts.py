@@ -3,19 +3,20 @@ import os
 import json
 import asyncio
 import websockets
-
+import sounddevice as sd
+import numpy as np
 
 class MinimaxTTSWS:
     """
     MiniMax TTS WebSocket / Voice Cloning
-    支援即時 chunk callback (bytes)。
+    支援即時 chunk callback (bytes)，最後播放完整 PCM。
     """
 
     def __init__(
         self,
         api_key=None,
         ws_url=None,
-        model="speech-02-turbo",  # 🔥 改成官方最新 model
+        model="speech-02-turbo",
         default_voice_id="male-qn-qingse",
     ):
         self.api_key = api_key or os.getenv("MINIMAX_API_KEY")
@@ -25,7 +26,7 @@ class MinimaxTTSWS:
 
     async def stream_text(self, text: str, voice_id: str = None, on_chunk=None):
         """
-        將文字透過 WebSocket 轉成語音，回傳 chunk。
+        將文字透過 WebSocket 轉成語音，收集所有 PCM chunk 後一次播放。
         :param text: 要轉語音的文字
         :param voice_id: 可使用 clone voice ID
         :param on_chunk: callback，參數 bytes (None 表示完成)
@@ -37,18 +38,17 @@ class MinimaxTTSWS:
             voice_id = self.default_voice_id
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
-
-        audio_bytes = bytearray()
+        all_audio_bytes = bytearray()
 
         try:
             async with websockets.connect(self.ws_url, extra_headers=headers) as ws:
-                # 1️⃣ 等待連線成功
+                # 等待連線成功
                 msg = json.loads(await ws.recv())
                 if msg.get("event") != "connected_success":
                     print("❌ 連線失敗:", msg)
                     return
 
-                # 2️⃣ 發送 task_start
+                # 發送 task_start
                 await ws.send(json.dumps({
                     "event": "task_start",
                     "model": self.model,
@@ -60,8 +60,7 @@ class MinimaxTTSWS:
                     },
                     "audio_setting": {
                         "sample_rate": 32000,
-                        "bitrate": 128000,
-                        "format": "mp3",
+                        "format": "pcm_s16le",
                         "channel": 1
                     }
                 }))
@@ -71,16 +70,13 @@ class MinimaxTTSWS:
                     print("❌ 任務啟動失敗:", msg)
                     return
 
-                # 3️⃣ 發送文字
-                await ws.send(json.dumps({
-                    "event": "task_continue",
-                    "text": text
-                }))
+                # 發送文字
+                await ws.send(json.dumps({"event": "task_continue", "text": text}))
 
-                # 4️⃣ 告訴它文字結束
+                # 告訴它文字結束
                 await ws.send(json.dumps({"event": "task_finish"}))
 
-                # 5️⃣ 接收音訊 chunk
+                # 接收音訊 chunk
                 while True:
                     try:
                         msg = json.loads(await ws.recv())
@@ -91,11 +87,20 @@ class MinimaxTTSWS:
                         hex_audio = msg["data"]["audio"]
                         if hex_audio:
                             chunk = bytes.fromhex(hex_audio)
-                            audio_bytes.extend(chunk)
-                            on_chunk(chunk)
+                            all_audio_bytes.extend(chunk)
+                            on_chunk(chunk)  # callback
 
                     if msg.get("event") == "task_finished":
                         break
+
+            # 收完所有 PCM chunk 後播放一次完整音訊
+            if all_audio_bytes:
+                try:
+                    audio_array = np.frombuffer(all_audio_bytes, dtype=np.int16)
+                    sd.play(audio_array, samplerate=32000)
+                    sd.wait()  # 阻塞直到播放完
+                except Exception as e:
+                    print("❌ 播放錯誤:", e)
 
         except Exception as e:
             print("❌ TTS WebSocket Error:", e)
