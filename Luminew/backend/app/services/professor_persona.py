@@ -15,7 +15,7 @@ PERSONAS = {
 
     "warm_industry_professor": ProfessorPersona(
         name="warm_industry_professor",
-        voice_id="Chinese (Mandarin)_Reliable_Executive",  # MiniMax voice clone ID，可改成實際 ID
+        voice_id="Chinese (Mandarin)_Male_Announcer",  # 已確認可用的音色
         min_words=150,
         max_words=220,
         prompt="""
