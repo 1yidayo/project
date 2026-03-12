@@ -5,33 +5,17 @@ from app.services.minimax_tts import MinimaxTTSWS
 
 async def main():
     tts = MinimaxTTSWS()
-    audio_chunks = []
 
+    print("🎵 正在播放語音...")
     def on_chunk(chunk):
-        if chunk:
-            # PCM bytes 直接存到 list
-            audio_chunks.append(chunk)
-            # 直接播放 PCM
-            audio_array = np.frombuffer(chunk, dtype=np.int16)
-            sd.play(audio_array, samplerate=32000)
-            sd.wait()  # 等每個 chunk 播放完
-        else:
-            print("✅ TTS 完成")
+        if not chunk:
+            print("✅ TTS 播放完成")
 
     await tts.stream_text(
-        "你好，這是 AI 面試系統的語音測試。",
+        "你好，這是語音串流播放測試。我們已經切換到了即時播放模式。如果你能聽到這段話，代表系統運作正常並且正在使用 74 號音色。祝你有個美好的一天！",
+        voice_id="Chinese (Mandarin)_Male_Announcer",
         on_chunk=on_chunk
     )
 
-    # 存成 WAV
-    import wave
-    with wave.open("test_tts.wav", "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # int16 -> 2 bytes
-        wf.setframerate(32000)
-        for c in audio_chunks:
-            wf.writeframes(c)
-
-    print("🎵 已輸出 test_tts.wav")
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

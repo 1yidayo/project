@@ -1,20 +1,20 @@
-fastapi          # 後端 API 框架
-uvicorn[standard]          # FastAPI 啟動伺服器
-requests         # 呼叫 OpenAI / Yating API
-httpx            # 非同步 HTTP 客戶端（多線程用）
-websockets       # 即時語音 / ASR WebSocket
-sounddevice      # 播放音訊（你要換掉 simpleaudio）
-numpy            # sounddevice 需要
-pydub            # 處理 mp3 / wav
-python-dotenv    # 讀取 .env（注意不是 dotenv）
-pydantic         # FastAPI 資料驗證（FastAPI 會用到）
+fastapi          # Backend API framework
+uvicorn[standard]          # FastAPI server
+requests         # HTTP requests for OpenAI / Yating API
+httpx            # Async HTTP client
+websockets       # Realtime voice / ASR WebSocket
+sounddevice      # Audio playback
+numpy            # Required by sounddevice
+pydub            # MP3 / WAV processing
+python-dotenv    # Load .env file
+pydantic         # FastAPI data validation
 
-# === 情緒分析新增依賴 ===
-torch            # PyTorch 深度學習框架
-torchvision      # 電腦視覺模型
-opencv-python    # 人臉偵測
-Pillow           # 影像處理
-openai           # OpenAI API (AI 評語)
-pdfplumber       # PDF 文字提取
-python-multipart # FastAPI 檔案上傳 
+# === Emotion Analysis ===
+torch            # PyTorch deep learning
+torchvision      # Computer vision models
+opencv-python    # Face detection
+Pillow           # Image processing
+openai           # OpenAI API
+pdfplumber       # PDF text extraction
+python-multipart # FastAPI file upload
 PyPDF2
